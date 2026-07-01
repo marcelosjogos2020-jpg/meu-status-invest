@@ -3,7 +3,8 @@ import pandas as pd
 import requests
 import urllib3
 import os
-import plotly.express as px  # <-- NOVA BIBLIOTECA DE GRÁFICOS INTERATIVOS
+import plotly.express as px
+import streamlit.components.v1 as components  # <-- NOVA FERRAMENTA PARA O GRÁFICO DA B3
 
 # --- DESLIGANDO ALERTAS DE SEGURANÇA ---
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -44,13 +45,45 @@ if "carteira" not in st.session_state:
 st.set_page_config(page_title="Meu Status Invest", page_icon="📈", layout="wide")
 st.title("📈 Meu Portfólio em Tempo Real")
 
+# --- NOVIDADE: GRÁFICO INTERATIVO DO TRADINGVIEW (IBOVESPA) ---
+st.subheader("🌐 Panorama do Mercado (Ibovespa)")
+
+codigo_tradingview = """
+<div class="tradingview-widget-container">
+  <div id="tradingview_ibov"></div>
+  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+  <script type="text/javascript">
+  new TradingView.widget(
+  {
+  "width": "100%",
+  "height": 400,
+  "symbol": "BMFBOVESPA:IBOV",
+  "interval": "D",
+  "timezone": "America/Sao_Paulo",
+  "theme": "dark",
+  "style": "3",
+  "locale": "br",
+  "enable_publishing": false,
+  "hide_top_toolbar": false,
+  "hide_legend": false,
+  "save_image": false,
+  "container_id": "tradingview_ibov"
+}
+  );
+  </script>
+</div>
+"""
+components.html(codigo_tradingview, height=400)
+st.divider()
+# -----------------------------------------------------------------
+
 st.sidebar.header("Cadastrar Novo Ativo")
 
 ticker_input = st.sidebar.text_input("Código do Ativo (Ex: PETR4)", value="PETR4").upper().strip()
 
 preco_atual_sidebar = None
 if ticker_input:
-    with st.sidebar.spinner(f"Buscando preço..."):
+    with st.sidebar.spinner("Buscando preço..."):
         preco_atual_sidebar = buscar_cotacao(ticker_input)
         
     if preco_atual_sidebar:
@@ -61,7 +94,6 @@ qtd_input = st.sidebar.number_input("Quantidade", min_value=1, value=100)
 valor_padrao_preco = float(preco_atual_sidebar) if preco_atual_sidebar else 35.00
 preco_medio_input = st.sidebar.number_input("Preço da Compra (R$)", min_value=0.01, value=valor_padrao_preco, step=0.01)
 
-# --- NOVIDADE: CÁLCULO DO TOTAL EM TEMPO REAL ANTES DE COMPRAR ---
 total_simulado = qtd_input * preco_medio_input
 st.sidebar.info(f"**Total da Ordem: R$ {total_simulado:,.2f}**")
 
@@ -94,12 +126,11 @@ if col_btn2.button("Limpar Tudo"):
         os.remove(ARQUIVO_BANCO)
     st.rerun()
 
-st.divider()
 
 if len(st.session_state["carteira"]) > 0:
     st.subheader("Sua Carteira Atualizada")
     
-    dados_brutos = [] # Guarda os números puros para os gráficos
+    dados_brutos = [] 
     valor_total_investido = 0
     valor_total_atual = 0
     
@@ -113,7 +144,6 @@ if len(st.session_state["carteira"]) > 0:
                 lucro_prejuizo = valor_atual_total - custo_total
                 rentabilidade = (lucro_prejuizo / custo_total) * 100 if custo_total > 0 else 0
                 
-                # Regra simples para separar: Se termina em 11, geralmente é FII.
                 categoria = "FIIs" if ativo['Ticker'].endswith('11') else "Ações"
                 
                 valor_total_investido += custo_total
@@ -132,18 +162,15 @@ if len(st.session_state["carteira"]) > 0:
                 })
             
     if dados_brutos:
-        # Formatando a tabela para ficar bonita na tela
         df_formatado = pd.DataFrame(dados_brutos).copy()
         for col in ["Preço Médio", "Preço Atual", "Custo Total", "Valor Atual", "Lucro/Prejuízo"]:
             df_formatado[col] = df_formatado[col].apply(lambda x: f"R$ {x:,.2f}")
         df_formatado["Rentabilidade (%)"] = df_formatado["Rentabilidade (%)"].apply(lambda x: f"{x:,.2f}%")
         
-        # Oculta a coluna "Categoria" da tabela para ficar mais limpo
         st.dataframe(df_formatado.drop(columns=["Categoria"]), use_container_width=True)
         
         st.divider()
         
-        # --- PAINEL GLOBAL ---
         st.subheader("Resumo Global")
         col1, col2, col3 = st.columns(3)
         resultado_global = valor_total_atual - valor_total_investido
@@ -154,19 +181,16 @@ if len(st.session_state["carteira"]) > 0:
         
         st.divider()
         
-        # --- NOVIDADE: SESSÃO DE GRÁFICOS ---
         st.subheader("📊 Distribuição do Patrimônio")
         df_graficos = pd.DataFrame(dados_brutos)
         
         col_graf1, col_graf2 = st.columns(2)
         
-        # Gráfico 1: Ações vs FIIs (Gráfico de Rosca)
         df_pizza = df_graficos.groupby('Categoria')['Valor Atual'].sum().reset_index()
         fig_pizza = px.pie(df_pizza, values='Valor Atual', names='Categoria', hole=0.4, 
                            title="Divisão da Carteira", color_discrete_sequence=['#00c698', '#1b4d3e'])
         col_graf1.plotly_chart(fig_pizza, use_container_width=True)
         
-        # Gráfico 2: Valor por Ativo (Gráfico de Barras)
         df_graficos = df_graficos.sort_values(by="Valor Atual", ascending=False)
         fig_barras = px.bar(df_graficos, x='Ativo', y='Valor Atual', color='Categoria',
                             title="Patrimônio por Ativo", text_auto='.2s', 
