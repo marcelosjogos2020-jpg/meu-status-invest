@@ -30,7 +30,10 @@ def salvar_dados(dados):
             'Custo Total': 'sum',
             'Data da Compra': 'last'
         }).reset_index()
-        df_agrupado['Preço Médio'] = df_agrupado['Custo Total'] / df_agrupado['Quantidade']
+        # Evita divisão por zero se o usuário zerar a quantidade
+        df_agrupado['Preço Médio'] = df_agrupado.apply(
+            lambda row: row['Custo Total'] / row['Quantidade'] if row['Quantidade'] > 0 else 0, axis=1
+        )
         df_agrupado = df_agrupado.drop(columns=['Custo Total'])
         df = df_agrupado
     df.to_csv(ARQUIVO_BANCO, index=False)
@@ -102,16 +105,21 @@ else:
             
             # Linha Horizontal (PREÇO MÉDIO)
             fig_hist.add_hline(y=preco_medio_ativo, line_dash="dash", line_color="#ff4b4b",
-                               annotation_text=f"Seu Preço Médio (R$ {preco_medio_ativo:.2f})",
+                               annotation_text=f"Preço Médio (R$ {preco_medio_ativo:.2f})",
                                annotation_position="bottom right",
                                annotation_font_color="#ff4b4b")
             
-            # NOVA MÁGICA: Linha Vertical (DATA DA COMPRA)
+            # Linha Vertical (DATA DA COMPRA) - Agora exibe a data no texto
             if data_compra_ativo not in ["Antes da Atualização", "N/A"]:
                 try:
-                    data_formatada = datetime.strptime(data_compra_ativo, "%d/%m/%Y %H:%M")
+                    # Verifica se tem hora salva junto ou só a data
+                    if len(data_compra_ativo) > 10:
+                        data_formatada = datetime.strptime(data_compra_ativo, "%d/%m/%Y %H:%M")
+                    else:
+                        data_formatada = datetime.strptime(data_compra_ativo, "%d/%m/%Y")
+                        
                     fig_hist.add_vline(x=data_formatada, line_dash="dot", line_color="#00d4ff",
-                                       annotation_text=f"Data da Compra",
+                                       annotation_text=f"Compra: {data_compra_ativo}",
                                        annotation_position="top right",
                                        annotation_font_color="#00d4ff")
                 except:
@@ -127,7 +135,7 @@ else:
 st.divider()
 
 # --- BARRA LATERAL ---
-st.sidebar.header("Cadastrar Novo Ativo")
+st.sidebar.header("Cadastrar ou Editar Ativo")
 
 ticker_input = st.sidebar.text_input("Código do Ativo (Ex: PETR4)", value="PETR4").upper().strip()
 
@@ -139,7 +147,11 @@ if ticker_input:
     if preco_atual_sidebar:
         st.sidebar.metric(label=f"Cotação Atual ({ticker_input})", value=f"R$ {preco_atual_sidebar:.2f}")
 
-qtd_input = st.sidebar.number_input("Quantidade", min_value=1, value=100)
+# NOVIDADE: Calendário para escolher a data exata
+data_compra_input = st.sidebar.date_input("Data da Compra", value=datetime.today())
+
+# NOVIDADE: Min_value=0 para permitir apenas editar a data sem comprar mais
+qtd_input = st.sidebar.number_input("Quantidade (Coloque 0 se quiser apenas editar a data)", min_value=0, value=100)
 
 valor_padrao_preco = float(preco_atual_sidebar) if preco_atual_sidebar else 35.00
 preco_medio_input = st.sidebar.number_input("Preço da Compra (R$)", min_value=0.01, value=valor_padrao_preco, step=0.01)
@@ -150,28 +162,32 @@ st.sidebar.info(f"**Total da Ordem: R$ {total_simulado:,.2f}**")
 col_btn1, col_btn2 = st.sidebar.columns(2)
 
 if col_btn1.button("Salvar Ativo"):
-    data_hora_atual = datetime.now().strftime("%d/%m/%Y %H:%M") 
+    # Transforma a data do calendário num texto (Ex: 01/07/2026)
+    data_str = data_compra_input.strftime("%d/%m/%Y")
     
     existe = False
     for ativo in st.session_state["carteira"]:
         if ativo["Ticker"] == ticker_input:
-            novo_custo_total = (ativo["Preço Médio"] * ativo["Quantidade"]) + (preco_medio_input * qtd_input)
-            ativo["Quantidade"] += qtd_input
-            ativo["Preço Médio"] = novo_custo_total / ativo["Quantidade"]
-            ativo["Data da Compra"] = data_hora_atual 
+            if qtd_input > 0:
+                novo_custo_total = (ativo["Preço Médio"] * ativo["Quantidade"]) + (preco_medio_input * qtd_input)
+                ativo["Quantidade"] += qtd_input
+                ativo["Preço Médio"] = novo_custo_total / ativo["Quantidade"]
+            
+            # Atualiza a data de qualquer forma (seja compra nova ou edição)
+            ativo["Data da Compra"] = data_str 
             existe = True
             break
             
-    if not existe:
+    if not existe and qtd_input > 0:
         st.session_state["carteira"].append({
             "Ticker": ticker_input,
             "Quantidade": qtd_input,
             "Preço Médio": preco_medio_input,
-            "Data da Compra": data_hora_atual
+            "Data da Compra": data_str
         })
     
     st.session_state["carteira"] = salvar_dados(st.session_state["carteira"])
-    st.sidebar.success(f"{ticker_input} salvo!")
+    st.sidebar.success(f"{ticker_input} salvo com a data {data_str}!")
     st.rerun()
 
 if col_btn2.button("Limpar Tudo"):
