@@ -5,7 +5,7 @@ import urllib3
 import os
 import plotly.express as px
 import streamlit.components.v1 as components
-from datetime import datetime  # <-- NOVA FERRAMENTA PARA DATA E HORA
+from datetime import datetime
 
 # --- DESLIGANDO ALERTAS DE SEGURANÇA ---
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -16,7 +16,6 @@ ARQUIVO_BANCO = "minha_carteira.csv"
 def carregar_dados():
     if os.path.exists(ARQUIVO_BANCO):
         df = pd.read_csv(ARQUIVO_BANCO)
-        # Garante que arquivos antigos não quebrem por falta da nova coluna de data
         if "Data da Compra" not in df.columns:
             df["Data da Compra"] = "Antes da Atualização"
         return df.to_dict(orient="records")
@@ -26,7 +25,6 @@ def salvar_dados(dados):
     df = pd.DataFrame(dados)
     if not df.empty:
         df['Custo Total'] = df['Quantidade'] * df['Preço Médio']
-        # Agrupa os ativos iguais e mantém a data da última compra
         df_agrupado = df.groupby('Ticker').agg({
             'Quantidade': 'sum', 
             'Custo Total': 'sum',
@@ -48,7 +46,6 @@ def buscar_cotacao(ticker):
     except:
         return None
 
-# --- NOVA FUNÇÃO: BUSCAR HISTÓRICO PARA O GRÁFICO ---
 def buscar_historico(ticker):
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}.SA?range=6mo&interval=1d"
@@ -69,10 +66,8 @@ if "carteira" not in st.session_state:
 st.set_page_config(page_title="Meu Status Invest", page_icon="📈", layout="wide")
 st.title("📈 Meu Portfólio em Tempo Real")
 
-# --- NOVIDADE: MENU DO GRÁFICO DINÂMICO ---
 st.subheader("🌐 Panorama do Mercado e Seus Ativos")
 
-# Cria a lista de opções (Ibovespa + os ativos que você tem na carteira)
 opcoes_grafico = ["Mercado Geral (Ibovespa)"]
 if len(st.session_state["carteira"]) > 0:
     for ativo in st.session_state["carteira"]:
@@ -81,7 +76,6 @@ if len(st.session_state["carteira"]) > 0:
 grafico_escolhido = st.selectbox("Qual gráfico você quer ver?", opcoes_grafico)
 
 if grafico_escolhido == "Mercado Geral (Ibovespa)":
-    # Gráfico do Ibovespa (TradingView)
     codigo_tradingview = """
     <div class="tradingview-widget-container">
       <div id="tradingview_ibov"></div>
@@ -98,23 +92,31 @@ if grafico_escolhido == "Mercado Geral (Ibovespa)":
     """
     components.html(codigo_tradingview, height=400)
 else:
-    # Gráfico de um Ativo Específico com a LINHA DO SEU PREÇO MÉDIO
     with st.spinner(f"Buscando histórico de {grafico_escolhido}..."):
         df_hist = buscar_historico(grafico_escolhido)
         if not df_hist.empty:
-            # Acha o seu preço médio na carteira
             preco_medio_ativo = next(a["Preço Médio"] for a in st.session_state["carteira"] if a["Ticker"] == grafico_escolhido)
+            data_compra_ativo = next(a.get("Data da Compra", "N/A") for a in st.session_state["carteira"] if a["Ticker"] == grafico_escolhido)
             
-            # Cria o gráfico
             fig_hist = px.line(df_hist, x="Data", y="Preço", title=f"Histórico de 6 Meses - {grafico_escolhido}")
             
-            # DESENHA A LINHA ONDE VOCÊ COMPROU
+            # Linha Horizontal (PREÇO MÉDIO)
             fig_hist.add_hline(y=preco_medio_ativo, line_dash="dash", line_color="#ff4b4b",
                                annotation_text=f"Seu Preço Médio (R$ {preco_medio_ativo:.2f})",
                                annotation_position="bottom right",
                                annotation_font_color="#ff4b4b")
             
-            # Deixa o gráfico com as cores do tema escuro
+            # NOVA MÁGICA: Linha Vertical (DATA DA COMPRA)
+            if data_compra_ativo not in ["Antes da Atualização", "N/A"]:
+                try:
+                    data_formatada = datetime.strptime(data_compra_ativo, "%d/%m/%Y %H:%M")
+                    fig_hist.add_vline(x=data_formatada, line_dash="dot", line_color="#00d4ff",
+                                       annotation_text=f"Data da Compra",
+                                       annotation_position="top right",
+                                       annotation_font_color="#00d4ff")
+                except:
+                    pass
+            
             fig_hist.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white", xaxis_title="")
             fig_hist.update_traces(line_color="#00c698")
             
@@ -148,7 +150,7 @@ st.sidebar.info(f"**Total da Ordem: R$ {total_simulado:,.2f}**")
 col_btn1, col_btn2 = st.sidebar.columns(2)
 
 if col_btn1.button("Salvar Ativo"):
-    data_hora_atual = datetime.now().strftime("%d/%m/%Y %H:%M") # MARCA A DATA E HORA AQUI
+    data_hora_atual = datetime.now().strftime("%d/%m/%Y %H:%M") 
     
     existe = False
     for ativo in st.session_state["carteira"]:
@@ -156,7 +158,7 @@ if col_btn1.button("Salvar Ativo"):
             novo_custo_total = (ativo["Preço Médio"] * ativo["Quantidade"]) + (preco_medio_input * qtd_input)
             ativo["Quantidade"] += qtd_input
             ativo["Preço Médio"] = novo_custo_total / ativo["Quantidade"]
-            ativo["Data da Compra"] = data_hora_atual # Atualiza a data se comprou mais
+            ativo["Data da Compra"] = data_hora_atual 
             existe = True
             break
             
@@ -165,7 +167,7 @@ if col_btn1.button("Salvar Ativo"):
             "Ticker": ticker_input,
             "Quantidade": qtd_input,
             "Preço Médio": preco_medio_input,
-            "Data da Compra": data_hora_atual # Salva a data da primeira compra
+            "Data da Compra": data_hora_atual
         })
     
     st.session_state["carteira"] = salvar_dados(st.session_state["carteira"])
@@ -178,7 +180,6 @@ if col_btn2.button("Limpar Tudo"):
         os.remove(ARQUIVO_BANCO)
     st.rerun()
 
-# --- TABELA E RESUMO ---
 if len(st.session_state["carteira"]) > 0:
     st.subheader("Sua Carteira Atualizada")
     
@@ -220,7 +221,6 @@ if len(st.session_state["carteira"]) > 0:
             df_formatado[col] = df_formatado[col].apply(lambda x: f"R$ {x:,.2f}")
         df_formatado["Rentabilidade (%)"] = df_formatado["Rentabilidade (%)"].apply(lambda x: f"{x:,.2f}%")
         
-        # Colocamos a coluna de Data da Compra bem organizada na tabela
         st.dataframe(df_formatado.drop(columns=["Categoria"]), use_container_width=True)
         
         st.divider()
