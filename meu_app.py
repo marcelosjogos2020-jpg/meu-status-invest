@@ -6,6 +6,7 @@ import streamlit.components.v1 as components
 import requests
 import urllib3
 import os
+import json
 from datetime import datetime
 
 # --- DESLIGANDO ALERTAS DE SEGURANÇA ---
@@ -159,8 +160,47 @@ with st.sidebar:
             st.success("Removido!")
             st.rerun()
 
+
 # ==========================================
-# --- 4. TOPO: CARTÕES DE INDICADORES ---
+# --- LETREIRO ROTATIVO (COTAÇÕES PASSANDO) ---
+# ==========================================
+# Lista de símbolos base para o letreiro
+simbolos_letreiro = [
+    {"proName": "BMFBOVESPA:IBOV", "title": "Ibovespa"},
+    {"proName": "FX_IDC:USDBRL", "title": "Dólar"},
+    {"proName": "BINANCE:BTCBRL", "title": "Bitcoin"}
+]
+
+# Adiciona dinamicamente até 10 ativos da sua carteira no letreiro
+if len(st.session_state["carteira"]) > 0:
+    ativos_unicos = list(set([a["Ticker"] for a in st.session_state["carteira"] if a["Ticker"] != "CAIXA"]))
+    for ativo in ativos_unicos[:10]:
+        simbolos_letreiro.append({"proName": f"BMFBOVESPA:{ativo}", "title": ativo})
+
+# Converte para JSON para o script do TradingView
+simbolos_json = json.dumps(simbolos_letreiro)
+
+codigo_letreiro = f"""
+<div class="tradingview-widget-container">
+  <div class="tradingview-widget-container__widget"></div>
+  <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
+  {{
+  "symbols": {simbolos_json},
+  "showSymbolLogo": true,
+  "isTransparent": true,
+  "displayMode": "adaptive",
+  "colorTheme": "dark",
+  "locale": "br"
+}}
+  </script>
+</div>
+"""
+# Renderiza o letreiro no topo
+components.html(codigo_letreiro, height=75)
+
+
+# ==========================================
+# --- 4. TOPO: TÍTULO E CARTÕES FIXOS ---
 # ==========================================
 st.title("📈 Meu Portfólio & Acompanhamento")
 
@@ -183,14 +223,13 @@ if indices:
     with cols_topo[1]: st.markdown(criar_cartao_html("Dólar", f"{indices['USD']['preco']:.4f}", f"{indices['USD']['var']:.4f}", indices['USD']['pct'], "R$ "), unsafe_allow_html=True)
     with cols_topo[2]: st.markdown(criar_cartao_html("Bitcoin (BRL)", f"{indices['BTC']['preco']:,.0f}", f"{indices['BTC']['var']:,.0f}", indices['BTC']['pct'], "R$ "), unsafe_allow_html=True)
 
-# Preenche os 2 últimos cartões com ativos da carteira
 ativos_ativos = list(set([a["Ticker"] for a in st.session_state["carteira"] if a["Ticker"] != "CAIXA"]))
 for i in range(2):
     if len(ativos_ativos) > i:
         ticker = ativos_ativos[i]
         preco = buscar_cotacao_simples(ticker)
         if preco:
-            with cols_topo[3+i]: st.markdown(criar_cartao_html(ticker, f"{preco:.2f}", 0.0, 0.0, "R$ "), unsafe_allow_html=True) # Simplificado para performance
+            with cols_topo[3+i]: st.markdown(criar_cartao_html(ticker, f"{preco:.2f}", 0.0, 0.0, "R$ "), unsafe_allow_html=True)
 
 st.write("") # Espaçamento
 
@@ -222,7 +261,6 @@ with col_esq:
     st.divider()
     st.subheader("📊 Distribuição do Património Global")
     
-    # Prepara dados globais para os gráficos da esquerda
     df_global = pd.DataFrame([a for a in st.session_state["carteira"] if a["Ticker"] != "CAIXA"])
     if not df_global.empty:
         df_global["Custo da Operação"] = df_global["Quantidade"] * df_global["Preço Pago"]
@@ -289,7 +327,6 @@ with col_dir:
             if tabelas:
                 df_view = pd.DataFrame(tabelas)
                 
-                # Aplica cor no Lucro
                 def color_lucro(val):
                     color = '#00e676' if val > 0 else '#ff4b4b'
                     return f'color: {color}; font-weight: bold;'
@@ -298,10 +335,8 @@ with col_dir:
                     "Lucro/Prejuízo": "R$ {:+.2f}", "Rent. (%)": "{:+.2f}%"
                 }).map(lambda v: color_lucro(v) if isinstance(v, (int, float)) else '', subset=["Lucro/Prejuízo", "Rent. (%)"])
                 
-                # Tabela elegante
                 st.dataframe(styled, use_container_width=True, hide_index=True)
                 
-                # Resumo
                 st.markdown("### Resumo Global")
                 c1, c2, c3 = st.columns(3)
                 rent_geral = ((tot_atu - tot_inv) / tot_inv) * 100 if tot_inv > 0 else 0
@@ -309,7 +344,6 @@ with col_dir:
                 c2.metric("Património Atual", f"R$ {tot_atu:,.2f}", f"R$ {tot_atu - tot_inv:,.2f}")
                 c3.metric("Rentabilidade Geral", f"{rent_geral:.2f}%")
                 
-                # Gráfico de Evolução (Linha)
                 st.markdown("### Evolução do Ativo")
                 ativo_graf_aba = st.selectbox("Selecione o ativo:", df_agrupado['Ticker'].tolist(), key=f"sel_{nome_carteira}")
                 
@@ -317,7 +351,6 @@ with col_dir:
                 if not df_hist.empty:
                     fig_linha = px.line(df_hist, x='Data', y='Preço')
                     
-                    # Linha do preço médio
                     pm_ativo = df_agrupado[df_agrupado['Ticker'] == ativo_graf_aba]['Preço Médio'].values[0]
                     fig_linha.add_hline(y=pm_ativo, line_dash="dash", line_color="#ff4b4b", annotation_text=f"PM: R$ {pm_ativo:.2f}")
                     
