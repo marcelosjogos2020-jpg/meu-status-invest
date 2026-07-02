@@ -14,6 +14,8 @@ st.set_page_config(page_title="Meu Portfólio", page_icon="📈", layout="wide")
 # ==========================================
 # --- 0. LISTA DE TICKERS (B3) PARA BUSCA INTELIGENTE ---
 # ==========================================
+# Lista offline (nao depende de API): ticker -> nome da empresa/fundo.
+# Adicione/edite conforme sua necessidade.
 TICKERS_B3 = {
     "PETR3": "Petrobras ON", "PETR4": "Petrobras PN",
     "VALE3": "Vale ON",
@@ -100,6 +102,7 @@ TICKERS_B3 = {
 }
 
 def search_tickers(searchterm):
+    """Filtra TICKERS_B3 pelo codigo ou nome, ignorando maiusculas/minusculas."""
     if not searchterm:
         return []
     termo = searchterm.strip().upper()
@@ -114,6 +117,9 @@ def search_tickers(searchterm):
 # --- 1. BANCO DE DADOS (CSV) ---
 # ==========================================
 ARQUIVO_BANCO = "minha_carteira.csv"
+
+# Carteiras que NÃO entram no cálculo de patrimônio real
+# (edite aqui se criar outras carteiras "de acompanhamento")
 CARTEIRAS_FORA_DO_PATRIMONIO = {"WATCHLIST"}
 
 def carregar_dados():
@@ -137,20 +143,27 @@ if "carteira" not in st.session_state:
     st.session_state["carteira"] = carregar_dados()
 
 def eh_patrimonio_real(ativo):
+    """True se o ativo deve contar no patrimônio/gráficos globais."""
     return ativo.get("Carteira", "COMPRAS (Real)").upper() not in CARTEIRAS_FORA_DO_PATRIMONIO
 
 # ==========================================
 # --- 2. FUNÇÕES DE DADOS (YFINANCE) ---
 # ==========================================
+# Removido o scraping direto do Yahoo com verify=False: usa yfinance puro,
+# que ja cuida de certificado e formato de resposta.
+
 @st.cache_data(ttl=60)
 def buscar_cotacao_simples(ticker):
     ticker_sa = ticker if ticker.endswith(('.SA', '-BRL', '=X', '^')) else f"{ticker}.SA"
+    # metodo principal: .history() -- mesmo caminho usado nos indices do topo,
+    # mais estavel que fast_info nas versoes recentes do yfinance.
     try:
         hist = yf.Ticker(ticker_sa).history(period="1d")
         if len(hist) > 0:
             return float(hist['Close'].iloc[-1])
     except Exception:
         pass
+    # fallback: fast_info
     try:
         preco = yf.Ticker(ticker_sa).fast_info.get("last_price")
         if preco:
@@ -161,6 +174,7 @@ def buscar_cotacao_simples(ticker):
 
 @st.cache_data(ttl=60)
 def buscar_cotacoes_lote(tickers):
+    """Busca varios tickers de uma vez (mais rapido que um a um)."""
     if not tickers:
         return {}
     tickers_sa = [t if t.endswith(('.SA', '-BRL', '=X', '^')) else f"{t}.SA" for t in tickers]
@@ -174,7 +188,7 @@ def buscar_cotacoes_lote(tickers):
                 else:
                     precos[t] = float(dados[t_sa]["Close"].iloc[-1])
             except Exception:
-                precos[t] = buscar_cotacao_simples(t) 
+                precos[t] = buscar_cotacao_simples(t)  # fallback individual
         return precos
     except Exception:
         return {t: buscar_cotacao_simples(t) for t in tickers}
@@ -200,8 +214,15 @@ def buscar_indices_topo():
 
 @st.cache_data(ttl=300)
 def buscar_destaques_mercado():
-    tickers = ['PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'BBDC4.SA', 'B3SA3.SA', 'ABEV3.SA', 'WEGE3.SA', 'RENT3.SA', 'SUZB3.SA', 'ELET3.SA', 'RADL3.SA', 'PRIO3.SA', 'HAPV3.SA', 'MGLU3.SA', 'COGN3.SA', 'USIM5.SA', 'CSNA3.SA', 'GGBR4.SA', 'JBSS3.SA', 'BBAS3.SA', 'RAIZ4.SA', 'AZZA3.SA', 'EGIE3.SA', 'BEEF3.SA', 'BRAV3.SA', 'CSMG3.SA']
+    """Maiores altas/baixas do dia entre um conjunto de blue chips.
+    Nao depende de token nem de embed externo -- calcula a partir do yfinance."""
+    tickers = ['PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'BBDC4.SA', 'B3SA3.SA', 'ABEV3.SA',
+               'WEGE3.SA', 'RENT3.SA', 'SUZB3.SA', 'ELET3.SA', 'RADL3.SA', 'PRIO3.SA',
+               'HAPV3.SA', 'MGLU3.SA', 'COGN3.SA', 'USIM5.SA', 'CSNA3.SA', 'GGBR4.SA',
+               'JBSS3.SA', 'BBAS3.SA', 'RAIZ4.SA', 'AZZA3.SA', 'EGIE3.SA', 'BEEF3.SA',
+               'BRAV3.SA', 'CSMG3.SA']
     resultados = []
+    erro_geral = False
     try:
         df = yf.download(tickers, period="5d", progress=False)['Close']
         df = df.dropna(axis=1, how='all')
@@ -212,11 +233,19 @@ def buscar_destaques_mercado():
                     p_ant, p_atu = s.iloc[-2], s.iloc[-1]
                     var_pct = ((p_atu - p_ant) / p_ant) * 100
                     resultados.append({"Ativo": ticker.replace(".SA", ""), "Preço": p_atu, "Var%": var_pct})
-            except: pass
-    except: pass
-    
+            except Exception:
+                pass
+    except Exception:
+        erro_geral = True
+
     res_sort = sorted(resultados, key=lambda x: x["Var%"], reverse=True)
-    return res_sort[:5], sorted(res_sort[-5:], key=lambda x: x["Var%"])
+    n = len(res_sort)
+    # Corta ao meio para nunca repetir o mesmo ativo em altas e baixas
+    # quando a lista vier curta (ex.: Yahoo instavel e poucos tickers responderam).
+    corte = min(5, n // 2) if n < 10 else 5
+    altas = res_sort[:corte]
+    baixas = sorted(res_sort[n - corte:], key=lambda x: x["Var%"]) if corte > 0 else []
+    return altas, baixas, erro_geral
 
 @st.cache_data(ttl=3600)
 def buscar_historico(ticker):
@@ -373,6 +402,8 @@ def criar_cartao_html(titulo, valor, variacao, pct, prefixo="", watchlist=False)
     sinal = "+" if variacao >= 0 else ""
     borda = "2px solid #378ADD" if watchlist else "1px solid #2B3040"
     selo = '<div style="color:#378ADD; font-size:11px; margin-bottom:4px;">👁️ WATCHLIST</div>' if watchlist else ""
+    # Montado em uma linha so (sem quebras/indentacao) para o st.markdown
+    # nunca interpretar como bloco de codigo quando 'selo' fica vazio.
     partes = [
         f'<div style="background-color: #161A25; padding: 15px; border-radius: 8px; border: {borda}; text-align: center; margin-bottom: 15px;">',
         selo,
@@ -383,12 +414,14 @@ def criar_cartao_html(titulo, valor, variacao, pct, prefixo="", watchlist=False)
     ]
     return "".join(partes)
 
+# Cria uma lista dinâmica com TODOS os cartões que precisam aparecer
 cartoes = []
 if indices:
     cartoes.append(("Ibovespa", f"{indices['IBOV']['preco']:,.0f}", indices['IBOV']['var'], indices['IBOV']['pct'], "", False))
     cartoes.append(("Dólar", f"{indices['USD']['preco']:.4f}", indices['USD']['var'], indices['USD']['pct'], "R$ ", False))
     cartoes.append(("Bitcoin (BRL)", f"{indices['BTC']['preco']:,.0f}", indices['BTC']['var'], indices['BTC']['pct'], "R$ ", False))
 
+# Ativos com sua carteira de origem, para saber se é watchlist
 ativos_com_carteira = {}
 for a in st.session_state["carteira"]:
     if a["Ticker"] != "CAIXA":
@@ -403,6 +436,7 @@ for ticker in ativos_ativos:
         is_watch = ativos_com_carteira[ticker].upper() in CARTEIRAS_FORA_DO_PATRIMONIO
         cartoes.append((ticker, f"{preco:.2f}", 0.0, 0.0, "R$ ", is_watch))
 
+# Desenha os cartões no ecrã agrupados de 5 em 5 colunas automaticamente!
 if cartoes:
     for i in range(0, len(cartoes), 5):
         cols_topo = st.columns(5)
@@ -412,7 +446,7 @@ if cartoes:
                 with cols_topo[j]:
                     st.markdown(criar_cartao_html(titulo, valor, var, pct, prefixo, is_watch), unsafe_allow_html=True)
 
-st.write("") 
+st.write("")  # Espaçamento
 
 # ==========================================
 # --- 5. ESTRUTURA PRINCIPAL (ESQUERDA / DIREITA) ---
@@ -444,6 +478,7 @@ with col_esq:
     st.subheader("📊 Distribuição do Patrimônio Global")
     st.caption("Considera apenas carteiras reais — a Watchlist fica de fora.")
 
+    # FILTRO CORRIGIDO: exclui carteiras de watchlist do calculo de patrimonio
     df_global = pd.DataFrame([a for a in st.session_state["carteira"] if a["Ticker"] != "CAIXA" and eh_patrimonio_real(a)])
     if not df_global.empty:
         df_global["Custo da Operação"] = df_global["Quantidade"] * df_global["Preço Pago"]
@@ -552,11 +587,11 @@ with col_dir:
                     fig_linha.update_traces(line_color="#00c698")
                     st.plotly_chart(fig_linha, use_container_width=True)
 
-    # --- NOVIDADE: Painel de Maiores Altas e Baixas inserido no final da coluna direita ---
+    # --- Painel de Maiores Altas e Baixas (sem embed externo, sem token) ---
     st.markdown("<br><br>", unsafe_allow_html=True)
     st.subheader("🔥 Destaques do Mercado")
 
-    altas, baixas = buscar_destaques_mercado()
+    altas, baixas, erro_destaques = buscar_destaques_mercado()
 
     st.markdown("""
         <style>
@@ -578,8 +613,10 @@ with col_dir:
         if altas:
             for item in altas:
                 html_altas += f"<div class='ranking-row'><span class='ticker-name'>{item['Ativo']}</span><span class='pct-up'>+{item['Var%']:.2f}%</span><span class='price'>R$ {item['Preço']:.2f}</span></div>"
+        elif erro_destaques:
+            html_altas += "<p style='color: #ff4b4b;'>Não consegui buscar os dados agora.</p>"
         else:
-            html_altas += "<p style='color: #888;'>A carregar dados...</p>"
+            html_altas += "<p style='color: #888;'>Sem dados suficientes no momento.</p>"
         html_altas += "</div>"
         st.markdown(html_altas, unsafe_allow_html=True)
 
@@ -589,7 +626,9 @@ with col_dir:
         if baixas:
             for item in baixas:
                 html_baixas += f"<div class='ranking-row'><span class='ticker-name'>{item['Ativo']}</span><span class='pct-down'>{item['Var%']:.2f}%</span><span class='price'>R$ {item['Preço']:.2f}</span></div>"
+        elif erro_destaques:
+            html_baixas += "<p style='color: #ff4b4b;'>Não consegui buscar os dados agora.</p>"
         else:
-            html_baixas += "<p style='color: #888;'>A carregar dados...</p>"
+            html_baixas += "<p style='color: #888;'>Sem dados suficientes no momento.</p>"
         html_baixas += "</div>"
         st.markdown(html_baixas, unsafe_allow_html=True)
