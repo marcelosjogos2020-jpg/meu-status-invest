@@ -51,13 +51,23 @@ def eh_patrimonio_real(ativo):
 
 @st.cache_data(ttl=60)
 def buscar_cotacao_simples(ticker):
+    ticker_sa = ticker if ticker.endswith(('.SA', '-BRL', '=X', '^')) else f"{ticker}.SA"
+    # metodo principal: .history() -- mesmo caminho usado nos indices do topo,
+    # mais estavel que fast_info nas versoes recentes do yfinance.
     try:
-        ticker_sa = ticker if ticker.endswith(('.SA', '-BRL', '=X', '^')) else f"{ticker}.SA"
-        info = yf.Ticker(ticker_sa).fast_info
-        preco = info.get("last_price")
-        return float(preco) if preco else None
+        hist = yf.Ticker(ticker_sa).history(period="1d")
+        if len(hist) > 0:
+            return float(hist['Close'].iloc[-1])
     except Exception:
-        return None
+        pass
+    # fallback: fast_info
+    try:
+        preco = yf.Ticker(ticker_sa).fast_info.get("last_price")
+        if preco:
+            return float(preco)
+    except Exception:
+        pass
+    return None
 
 @st.cache_data(ttl=60)
 def buscar_cotacoes_lote(tickers):
