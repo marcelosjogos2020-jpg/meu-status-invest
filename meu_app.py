@@ -16,7 +16,6 @@ ARQUIVO_BANCO = "minha_carteira.csv"
 def carregar_dados():
     if os.path.exists(ARQUIVO_BANCO):
         df = pd.read_csv(ARQUIVO_BANCO)
-        # Transforma o banco de dados antigo no novo formato de "Livro de Transações"
         if "Preço Médio" in df.columns:
             df = df.rename(columns={"Preço Médio": "Preço Pago"})
         if "Data da Compra" not in df.columns:
@@ -63,7 +62,6 @@ st.subheader("🌐 Panorama do Mercado e Seus Ativos")
 
 opcoes_grafico = ["Mercado Geral (Ibovespa)"]
 if len(st.session_state["carteira"]) > 0:
-    # Pega apenas os nomes únicos dos ativos para o menu
     ativos_unicos = list(set([ativo["Ticker"] for ativo in st.session_state["carteira"]]))
     opcoes_grafico.extend(ativos_unicos)
 
@@ -89,7 +87,6 @@ else:
     with st.spinner(f"Buscando histórico de {grafico_escolhido}..."):
         df_hist = buscar_historico(grafico_escolhido)
         if not df_hist.empty:
-            # Puxa todas as compras desse ativo para calcular o Preço Médio e desenhar as datas
             compras_ativo = [a for a in st.session_state["carteira"] if a["Ticker"] == grafico_escolhido]
             qtd_total_ativo = sum(a["Quantidade"] for a in compras_ativo)
             custo_total_ativo = sum(a["Quantidade"] * a["Preço Pago"] for a in compras_ativo)
@@ -103,21 +100,28 @@ else:
                                annotation_position="bottom right",
                                annotation_font_color="#ff4b4b")
             
-            # Linhas Verticais (MÚLTIPLAS DATAS DE COMPRA)
-            datas_plotadas = set() # Evita desenhar duas linhas no mesmo dia
+            # --- NOVIDADE: Linhas Verticais com Texto (Qtd + Data) na Vertical ---
+            compras_por_data = {}
             for compra in compras_ativo:
                 d = compra.get("Data da Compra", "N/A")
-                if d not in ["Antes da Atualização", "N/A"] and d not in datas_plotadas:
-                    datas_plotadas.add(d)
-                    try:
-                        if len(d) > 10:
-                            data_formatada = datetime.strptime(d, "%d/%m/%Y %H:%M")
-                        else:
-                            data_formatada = datetime.strptime(d, "%d/%m/%Y")
-                            
-                        fig_hist.add_vline(x=data_formatada, line_dash="dot", line_color="#00d4ff")
-                    except:
-                        pass
+                if d not in ["Antes da Atualização", "N/A"]:
+                    # Isola apenas a data (sem a hora, se houver) para agrupar no dia
+                    dia = d.split(" ")[0]
+                    if dia in compras_por_data:
+                        compras_por_data[dia] += compra["Quantidade"]
+                    else:
+                        compras_por_data[dia] = compra["Quantidade"]
+
+            for dia, qtd in compras_por_data.items():
+                try:
+                    data_formatada = datetime.strptime(dia, "%d/%m/%Y")
+                    fig_hist.add_vline(x=data_formatada, line_dash="dot", line_color="#00d4ff",
+                                       annotation_text=f"{int(qtd)} cotas em {dia}",
+                                       annotation_position="top left",
+                                       annotation_textangle=-90, # Deixa o texto escrito de lado (vertical)
+                                       annotation_font_color="#00d4ff")
+                except:
+                    pass
             
             fig_hist.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white", xaxis_title="")
             fig_hist.update_traces(line_color="#00c698")
@@ -156,7 +160,6 @@ if col_btn1.button("Salvar Ativo"):
     data_str = data_compra_input.strftime("%d/%m/%Y")
     
     if qtd_input > 0:
-        # AGORA ELE SEMPRE ADICIONA UMA NOVA LINHA NO SEU HISTÓRICO
         st.session_state["carteira"].append({
             "Ticker": ticker_input,
             "Quantidade": qtd_input,
@@ -164,7 +167,6 @@ if col_btn1.button("Salvar Ativo"):
             "Data da Compra": data_str
         })
     else:
-        # Se colocar 0, ele apenas edita a data da sua última compra daquele ativo
         for ativo in reversed(st.session_state["carteira"]):
             if ativo["Ticker"] == ticker_input:
                 ativo["Data da Compra"] = data_str
@@ -184,11 +186,9 @@ if col_btn2.button("Limpar Tudo"):
 if len(st.session_state["carteira"]) > 0:
     st.subheader("Sua Posição Consolidada")
     
-    # 1. Cria um DataFrame com todo o histórico de compras
     df_ledger = pd.DataFrame(st.session_state["carteira"])
     df_ledger["Custo da Operação"] = df_ledger["Quantidade"] * df_ledger["Preço Pago"]
     
-    # 2. Agrupa tudo por Ativo para calcular a Posição Atual (Preço Médio Real)
     df_agrupado = df_ledger.groupby('Ticker').agg({
         'Quantidade': 'sum',
         'Custo da Operação': 'sum'
@@ -203,7 +203,6 @@ if len(st.session_state["carteira"]) > 0:
     valor_total_atual = 0
     
     with st.spinner("Atualizando valores da carteira..."):
-        # Itera sobre os ativos agrupados
         for index, row in df_agrupado.iterrows():
             ticker = row['Ticker']
             qtd_total = row['Quantidade']
@@ -240,10 +239,8 @@ if len(st.session_state["carteira"]) > 0:
             df_formatado[col] = df_formatado[col].apply(lambda x: f"R$ {x:,.2f}")
         df_formatado["Rentabilidade (%)"] = df_formatado["Rentabilidade (%)"].apply(lambda x: f"{x:,.2f}%")
         
-        # Tabela Consolidada (Sem a coluna de data, pois são várias datas)
         st.dataframe(df_formatado.drop(columns=["Categoria"]), use_container_width=True)
         
-        # --- NOVIDADE: HISTÓRICO DETALHADO OCULTO NUMA SANFONA ---
         with st.expander("🛒 Ver Histórico Detalhado de Compras (Livro de Ordens)"):
             df_historico_tela = df_ledger.copy()
             df_historico_tela = df_historico_tela[["Data da Compra", "Ticker", "Quantidade", "Preço Pago", "Custo da Operação"]]
