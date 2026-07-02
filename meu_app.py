@@ -29,12 +29,31 @@ def buscar_cotacao_completa(ticker):
         hist = acao.history(period="5d")
         if len(hist) < 2:
             return None
+            
         preco_atual = hist['Close'].iloc[-1]
         preco_anterior = hist['Close'].iloc[-2]
+        abertura = hist['Open'].iloc[-1]
+        maxima = hist['High'].iloc[-1]
+        minima = hist['Low'].iloc[-1]
+        volume = hist['Volume'].iloc[-1]
+        
         variacao = preco_atual - preco_anterior
         variacao_pct = (variacao / preco_anterior) * 100
+        
+        # Formata o volume para 'M' (Milhões) ou 'K' (Milhares)
+        if volume >= 1000000:
+            vol_formatado = f"{volume/1000000:.2f}M"
+        elif volume >= 1000:
+            vol_formatado = f"{volume/1000:.2f}K"
+        else:
+            vol_formatado = str(volume)
+            
         return {
             "preco": preco_atual,
+            "abertura": abertura,
+            "maxima": maxima,
+            "minima": minima,
+            "volume": vol_formatado,
             "variacao": variacao,
             "variacao_pct": variacao_pct
         }
@@ -48,7 +67,6 @@ def buscar_historico(ticker):
         acao = yf.Ticker(ticker_sa)
         hist = acao.history(period="6mo")
         hist.reset_index(inplace=True)
-        # Remove o timezone para evitar bugs no gráfico
         if hist['Date'].dt.tz is not None:
             hist['Date'] = hist['Date'].dt.tz_localize(None)
         return hist[['Date', 'Close']].rename(columns={'Date': 'Data', 'Close': 'Preço'})
@@ -109,24 +127,45 @@ with st.sidebar:
             st.rerun()
 
 # ==========================================
-# --- 4. TOPO: COTAÇÕES (IBOV, DOLAR, ETC) ---
+# --- 4. TOPO: LETREIRO ROTATIVO (MARQUEE) ---
 # ==========================================
 indices = buscar_ibov_dolar()
 if indices:
-    # Cria colunas no topo para exibir as métricas
-    cols = st.columns(6) 
-    with cols[0]:
-        st.metric("Ibovespa", f"{indices['IBOV']['preco']:,.0f}", f"{indices['IBOV']['var']:,.0f} ({indices['IBOV']['pct']:.2f}%)")
-    with cols[1]:
-        st.metric("Dólar (BRL)", f"R$ {indices['USD']['preco']:.4f}", f"{indices['USD']['var']:.4f} ({indices['USD']['pct']:.2f}%)")
+    # Montando a string de HTML para o letreiro passando
+    html_marquee = """
+    <style>
+        .ticker-wrap { width: 100%; overflow: hidden; background-color: #1E1E1E; padding: 10px 0; border-radius: 8px; border: 1px solid #333; margin-bottom: 20px;}
+        .ticker-text { font-size: 16px; font-family: sans-serif; color: #FFFFFF; font-weight: 500;}
+        .positivo { color: #00e676; }
+        .negativo { color: #ff4b4b; }
+        .divisor { margin: 0 20px; color: #555; }
+    </style>
+    <div class="ticker-wrap">
+        <marquee behavior="scroll" direction="left" scrollamount="6" class="ticker-text">
+    """
     
-    # Mostra até 4 ativos da carteira no topo
+    # Adiciona IBOV
+    cor_ibov = "positivo" if indices["IBOV"]["var"] >= 0 else "negativo"
+    sinal_ibov = "+" if indices["IBOV"]["var"] >= 0 else ""
+    html_marquee += f"<b>IBOV</b> {indices['IBOV']['preco']:,.0f}pts <span class='{cor_ibov}'>{sinal_ibov}{indices['IBOV']['var']:,.0f} ({sinal_ibov}{indices['IBOV']['pct']:.2f}%)</span> <span class='divisor'>|</span> "
+    
+    # Adiciona DOLAR
+    cor_usd = "positivo" if indices["USD"]["var"] >= 0 else "negativo"
+    sinal_usd = "+" if indices["USD"]["var"] >= 0 else ""
+    html_marquee += f"<b>DÓLAR</b> R$ {indices['USD']['preco']:.4f} <span class='{cor_usd}'>{sinal_usd}{indices['USD']['var']:.4f} ({sinal_usd}{indices['USD']['pct']:.2f}%)</span> <span class='divisor'>|</span> "
+
+    # Adiciona os ativos que o usuário já tem na carteira no letreiro
     ativos_unicos = list(set([d["Ticker"] for d in st.session_state["tabela"]]))
-    for i, ticker in enumerate(ativos_unicos[:4]): 
+    for ticker in ativos_unicos: 
         info = buscar_cotacao_completa(ticker)
         if info:
-            with cols[i+2]:
-                st.metric(ticker, f"R$ {info['preco']:.2f}", f"{info['variacao']:.2f} ({info['variacao_pct']:.2f}%)")
+            cor_ativo = "positivo" if info["variacao"] >= 0 else "negativo"
+            sinal_ativo = "+" if info["variacao"] >= 0 else ""
+            html_marquee += f"<b>{ticker}</b> R$ {info['preco']:.2f} <span class='{cor_ativo}'>{sinal_ativo}{info['variacao']:.2f} ({sinal_ativo}{info['variacao_pct']:.2f}%)</span> <span class='divisor'>|</span> "
+            
+    html_marquee += "</marquee></div>"
+    st.markdown(html_marquee, unsafe_allow_html=True)
+
 
 st.title("📈 Meu Portfólio & Acompanhamento")
 
@@ -138,7 +177,6 @@ st.subheader("🌐 Panorama do Mercado e Seus Ativos")
 opcoes_grafico = {"Mercado Geral (Ibovespa)": "BMFBOVESPA:IBOV"}
 ativos_graf = list(set([ativo["Ticker"] for ativo in st.session_state["tabela"]]))
 
-# Adiciona as ações da sua carteira à lista do gráfico
 for ativo in ativos_graf:
     opcoes_grafico[ativo] = f"BMFBOVESPA:{ativo}"
 
@@ -146,7 +184,6 @@ grafico_escolhido = st.selectbox("Qual gráfico você quer ver?", list(opcoes_gr
 simbolo_tv = opcoes_grafico[grafico_escolhido]
 
 codigo_grafico_avancado = f"""
-<!-- TradingView Widget BEGIN -->
 <div class="tradingview-widget-container" style="height:450px;width:100%">
   <div id="tradingview_chart" style="height:calc(100% - 32px);width:100%"></div>
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
@@ -172,13 +209,12 @@ codigo_grafico_avancado = f"""
   );
   </script>
 </div>
-<!-- TradingView Widget END -->
 """
 components.html(codigo_grafico_avancado, height=450)
 st.divider()
 
 # ==========================================
-# --- 6. ABAS DAS CARTEIRAS (COM DATAS)  ---
+# --- 6. ABAS DAS CARTEIRAS ESTILO INVESTING ---
 # ==========================================
 abas = st.tabs(st.session_state["carteiras_tabs"])
 
@@ -186,7 +222,6 @@ for i, carteira_nome in enumerate(st.session_state["carteiras_tabs"]):
     with abas[i]:
         st.subheader(f"Lista de Ativos: {carteira_nome}")
         
-        # Filtra os ativos que pertencem a esta carteira específica
         carteira_atual = [d for d in st.session_state["tabela"] if d["Carteira"] == carteira_nome]
         
         if not carteira_atual:
@@ -200,13 +235,11 @@ for i, carteira_nome in enumerate(st.session_state["carteiras_tabs"]):
         total_investido = 0
         total_atual = 0
         
-        # Lendo cada compra (linha) separadamente para manter a DATA
         for idx, row in df.iterrows():
             ticker = row['Ticker']
             qnt = row['Quantidade']
             preco_pago = row['Preço Pago']
             custo = row['Custo Total']
-            data_compra = row.get('Data da Compra', '-')
             
             info = buscar_cotacao_completa(ticker)
             if info:
@@ -218,41 +251,42 @@ for i, carteira_nome in enumerate(st.session_state["carteiras_tabs"]):
                 total_atual += v_atual
                 
                 tabelas.append({
-                    "Ativo": ticker,
-                    "Data": data_compra,
+                    "Códigos": ticker,
                     "Último": preco_atual,
-                    "Variação (R$)": info['variacao'],
-                    "Var (%)": info['variacao_pct']/100,
+                    "Abertura": info['abertura'],
+                    "Máxima": info['maxima'],
+                    "Mínima": info['minima'],
+                    "Variação": info['variacao'],
+                    "Var%": info['variacao_pct']/100,
+                    "Vol.": info['volume'],
                     "Qtd": int(qnt),
                     "Preço Pago": preco_pago,
-                    "Patrimônio": v_atual,
                     "Lucro/Prej.": lucro
                 })
                 
         if tabelas:
             df_view = pd.DataFrame(tabelas)
             
-            # Função para pintar os números de verde ou vermelho
             def style_row(val):
                 if pd.isna(val):
                     return ''
-                # Cor verde mais brilhante ou vermelho padrão para destacar no modo escuro
                 color = '#00e676' if val > 0 else '#ff4b4b' 
                 return f'color: {color}; font-weight: bold;'
                 
             styled = df_view.style.format({
-                "Último": "R$ {:.2f}",
-                "Variação (R$)": "R$ {:.2f}",
-                "Var (%)": "{:.2%}",
+                "Último": "{:.2f}",
+                "Abertura": "{:.2f}",
+                "Máxima": "{:.2f}",
+                "Mínima": "{:.2f}",
+                "Variação": "{:+.2f}",
+                "Var%": "{:+.2%}",
                 "Preço Pago": "R$ {:.2f}",
-                "Patrimônio": "R$ {:.2f}",
-                "Lucro/Prej.": "R$ {:.2f}"
+                "Lucro/Prej.": "R$ {:+.2f}"
             }).map(
                 lambda v: style_row(v) if isinstance(v, (int, float)) and v != 0 else '', 
-                subset=["Variação (R$)", "Var (%)", "Lucro/Prej."]
+                subset=["Variação", "Var%", "Lucro/Prej."]
             )
             
-            # Mostra a tabela formatada e oculta a coluna de índice numérico (0, 1, 2...)
             st.dataframe(styled, use_container_width=True, hide_index=True)
             
             # --- Resumo da Carteira ---
