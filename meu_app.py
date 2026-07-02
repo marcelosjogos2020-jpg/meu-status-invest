@@ -164,20 +164,17 @@ with st.sidebar:
 # ==========================================
 # --- LETREIRO ROTATIVO (COTAÇÕES PASSANDO) ---
 # ==========================================
-# Lista de símbolos base para o letreiro
 simbolos_letreiro = [
     {"proName": "BMFBOVESPA:IBOV", "title": "Ibovespa"},
     {"proName": "FX_IDC:USDBRL", "title": "Dólar"},
     {"proName": "BINANCE:BTCBRL", "title": "Bitcoin"}
 ]
 
-# Adiciona dinamicamente até 10 ativos da sua carteira no letreiro
 if len(st.session_state["carteira"]) > 0:
     ativos_unicos = list(set([a["Ticker"] for a in st.session_state["carteira"] if a["Ticker"] != "CAIXA"]))
     for ativo in ativos_unicos[:10]:
         simbolos_letreiro.append({"proName": f"BMFBOVESPA:{ativo}", "title": ativo})
 
-# Converte para JSON para o script do TradingView
 simbolos_json = json.dumps(simbolos_letreiro)
 
 codigo_letreiro = f"""
@@ -195,12 +192,11 @@ codigo_letreiro = f"""
   </script>
 </div>
 """
-# Renderiza o letreiro no topo
 components.html(codigo_letreiro, height=75)
 
 
 # ==========================================
-# --- 4. TOPO: TÍTULO E CARTÕES FIXOS ---
+# --- 4. TOPO: CARTÕES FIXOS (CORRIGIDO) ---
 # ==========================================
 st.title("📈 Meu Portfólio & Acompanhamento")
 
@@ -210,26 +206,35 @@ def criar_cartao_html(titulo, valor, variacao, pct, prefixo=""):
     cor = "#00e676" if variacao >= 0 else "#ff4b4b"
     sinal = "+" if variacao >= 0 else ""
     return f"""
-    <div style="background-color: #161A25; padding: 15px; border-radius: 8px; border: 1px solid #2B3040; text-align: center;">
+    <div style="background-color: #161A25; padding: 15px; border-radius: 8px; border: 1px solid #2B3040; text-align: center; margin-bottom: 15px;">
         <div style="color: #A0AEC0; font-size: 14px; font-weight: bold; margin-bottom: 5px;">{titulo}</div>
         <div style="font-size: 22px; font-weight: bold; color: white;">{prefixo}{valor}</div>
-        <div style="color: {cor}; font-size: 14px; margin-top: 5px;">{sinal}{variacao} ({sinal}{pct:.2f}%)</div>
+        <div style="color: {cor}; font-size: 14px; margin-top: 5px;">{sinal}{variacao:.2f} ({sinal}{pct:.2f}%)</div>
     </div>
     """
 
-cols_topo = st.columns(5)
+# Cria uma lista dinâmica com TODOS os cartões que precisam aparecer
+cartoes = []
 if indices:
-    with cols_topo[0]: st.markdown(criar_cartao_html("Ibovespa", f"{indices['IBOV']['preco']:,.0f}", f"{indices['IBOV']['var']:,.0f}", indices['IBOV']['pct']), unsafe_allow_html=True)
-    with cols_topo[1]: st.markdown(criar_cartao_html("Dólar", f"{indices['USD']['preco']:.4f}", f"{indices['USD']['var']:.4f}", indices['USD']['pct'], "R$ "), unsafe_allow_html=True)
-    with cols_topo[2]: st.markdown(criar_cartao_html("Bitcoin (BRL)", f"{indices['BTC']['preco']:,.0f}", f"{indices['BTC']['var']:,.0f}", indices['BTC']['pct'], "R$ "), unsafe_allow_html=True)
+    cartoes.append(("Ibovespa", f"{indices['IBOV']['preco']:,.0f}", indices['IBOV']['var'], indices['IBOV']['pct'], ""))
+    cartoes.append(("Dólar", f"{indices['USD']['preco']:.4f}", indices['USD']['var'], indices['USD']['pct'], "R$ "))
+    cartoes.append(("Bitcoin (BRL)", f"{indices['BTC']['preco']:,.0f}", indices['BTC']['var'], indices['BTC']['pct'], "R$ "))
 
 ativos_ativos = list(set([a["Ticker"] for a in st.session_state["carteira"] if a["Ticker"] != "CAIXA"]))
-for i in range(2):
-    if len(ativos_ativos) > i:
-        ticker = ativos_ativos[i]
-        preco = buscar_cotacao_simples(ticker)
-        if preco:
-            with cols_topo[3+i]: st.markdown(criar_cartao_html(ticker, f"{preco:.2f}", 0.0, 0.0, "R$ "), unsafe_allow_html=True)
+for ticker in ativos_ativos:
+    preco = buscar_cotacao_simples(ticker)
+    if preco:
+        cartoes.append((ticker, f"{preco:.2f}", 0.0, 0.0, "R$ "))
+
+# Desenha os cartões no ecrã agrupados de 5 em 5 colunas automaticamente!
+if cartoes:
+    for i in range(0, len(cartoes), 5):
+        cols_topo = st.columns(5)
+        for j in range(5):
+            if i + j < len(cartoes):
+                titulo, valor, var, pct, prefixo = cartoes[i+j]
+                with cols_topo[j]:
+                    st.markdown(criar_cartao_html(titulo, valor, var, pct, prefixo), unsafe_allow_html=True)
 
 st.write("") # Espaçamento
 
@@ -259,7 +264,7 @@ with col_esq:
     components.html(codigo_grafico_avancado, height=400)
     
     st.divider()
-    st.subheader("📊 Distribuição do Património Global")
+    st.subheader("📊 Distribuição do Patrimônio Global")
     
     df_global = pd.DataFrame([a for a in st.session_state["carteira"] if a["Ticker"] != "CAIXA"])
     if not df_global.empty:
@@ -272,19 +277,19 @@ with col_esq:
             if preco_atu:
                 patrimonio = row['Quantidade'] * preco_atu
                 cat = 'FIIs' if row['Ticker'].endswith('11') else 'Ações'
-                lista_graf.append({'Ativo': row['Ticker'], 'Património': patrimonio, 'Categoria': cat})
+                lista_graf.append({'Ativo': row['Ticker'], 'Patrimônio': patrimonio, 'Categoria': cat})
         
         if lista_graf:
             df_g = pd.DataFrame(lista_graf)
             c_pie, c_bar = st.columns(2)
             
-            df_pizza = df_g.groupby('Categoria')['Património'].sum().reset_index()
-            fig_pie = px.pie(df_pizza, values='Património', names='Categoria', hole=0.5, color_discrete_sequence=['#00c698', '#1b4d3e'])
+            df_pizza = df_g.groupby('Categoria')['Patrimônio'].sum().reset_index()
+            fig_pie = px.pie(df_pizza, values='Patrimônio', names='Categoria', hole=0.5, color_discrete_sequence=['#00c698', '#1b4d3e'])
             fig_pie.update_layout(margin=dict(t=0, b=0, l=0, r=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
             c_pie.plotly_chart(fig_pie, use_container_width=True)
             
-            df_g = df_g.sort_values(by="Património", ascending=False)
-            fig_bar = px.bar(df_g, x='Ativo', y='Património', color='Categoria', text_auto='.2s', color_discrete_map={"Ações": "#1b4d3e", "FIIs": "#00c698"})
+            df_g = df_g.sort_values(by="Patrimônio", ascending=False)
+            fig_bar = px.bar(df_g, x='Ativo', y='Patrimônio', color='Categoria', text_auto='.2s', color_discrete_map={"Ações": "#1b4d3e", "FIIs": "#00c698"})
             fig_bar.update_layout(margin=dict(t=0, b=0, l=0, r=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
             c_bar.plotly_chart(fig_bar, use_container_width=True)
 
@@ -327,6 +332,7 @@ with col_dir:
             if tabelas:
                 df_view = pd.DataFrame(tabelas)
                 
+                # Aplica cor no Lucro
                 def color_lucro(val):
                     color = '#00e676' if val > 0 else '#ff4b4b'
                     return f'color: {color}; font-weight: bold;'
@@ -335,15 +341,18 @@ with col_dir:
                     "Lucro/Prejuízo": "R$ {:+.2f}", "Rent. (%)": "{:+.2f}%"
                 }).map(lambda v: color_lucro(v) if isinstance(v, (int, float)) else '', subset=["Lucro/Prejuízo", "Rent. (%)"])
                 
+                # Tabela elegante
                 st.dataframe(styled, use_container_width=True, hide_index=True)
                 
+                # Resumo
                 st.markdown("### Resumo Global")
                 c1, c2, c3 = st.columns(3)
                 rent_geral = ((tot_atu - tot_inv) / tot_inv) * 100 if tot_inv > 0 else 0
                 c1.metric("Totalmente Investido", f"R$ {tot_inv:,.2f}")
-                c2.metric("Património Atual", f"R$ {tot_atu:,.2f}", f"R$ {tot_atu - tot_inv:,.2f}")
+                c2.metric("Patrimônio Atual", f"R$ {tot_atu:,.2f}", f"R$ {tot_atu - tot_inv:,.2f}")
                 c3.metric("Rentabilidade Geral", f"{rent_geral:.2f}%")
                 
+                # Gráfico de Evolução (Linha)
                 st.markdown("### Evolução do Ativo")
                 ativo_graf_aba = st.selectbox("Selecione o ativo:", df_agrupado['Ticker'].tolist(), key=f"sel_{nome_carteira}")
                 
@@ -351,6 +360,7 @@ with col_dir:
                 if not df_hist.empty:
                     fig_linha = px.line(df_hist, x='Data', y='Preço')
                     
+                    # Linha do preço médio
                     pm_ativo = df_agrupado[df_agrupado['Ticker'] == ativo_graf_aba]['Preço Médio'].values[0]
                     fig_linha.add_hline(y=pm_ativo, line_dash="dash", line_color="#ff4b4b", annotation_text=f"PM: R$ {pm_ativo:.2f}")
                     
