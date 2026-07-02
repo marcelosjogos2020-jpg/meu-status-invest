@@ -1,393 +1,322 @@
 import streamlit as st
 import pandas as pd
-import yfinance as yf
+import requests
+import urllib3
+import os
 import plotly.express as px
 import streamlit.components.v1 as components
-from datetime import date
+from datetime import datetime
+import json # <-- Adicionado para configurar o widget de cotações
 
-# Configuração da página (deve ser a primeira linha do Streamlit)
-st.set_page_config(page_title="Meu Portfólio", layout="wide")
+# --- DESLIGANDO ALERTAS DE SEGURANÇA ---
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ==========================================
-# --- 1. INICIALIZAÇÃO DO SESSION STATE ---
-# ==========================================
-if "tabela" not in st.session_state:
-    st.session_state["tabela"] = []
-if "carteiras_tabs" not in st.session_state:
-    st.session_state["carteiras_tabs"] = ["COMPRAS", "COMPRAS-FUTURAS"]
-if "dados_globais" not in st.session_state:
-    st.session_state["dados_globais"] = []
+# --- CONFIGURAÇÃO DO ARQUIVO ---
+ARQUIVO_BANCO = "minha_carteira.csv"
 
-# ==========================================
-# --- 2. FUNÇÕES AUXILIARES (DADOS API) ---
-# ==========================================
-@st.cache_data(ttl=300) # Atualiza a cada 5 minutos
-def buscar_cotacao_completa(ticker):
+def carregar_dados():
+    if os.path.exists(ARQUIVO_BANCO):
+        df = pd.read_csv(ARQUIVO_BANCO)
+        if "Preço Médio" in df.columns:
+            df = df.rename(columns={"Preço Médio": "Preço Pago"})
+        if "Data da Compra" not in df.columns:
+            df["Data da Compra"] = "Antes da Atualização"
+        return df.to_dict(orient="records")
+    return []
+
+def salvar_dados(dados):
+    df = pd.DataFrame(dados)
+    df.to_csv(ARQUIVO_BANCO, index=False)
+    return df.to_dict(orient="records")
+
+def buscar_cotacao(ticker):
     try:
-        ticker_sa = ticker if ticker.endswith('.SA') else f"{ticker}.SA"
-        acao = yf.Ticker(ticker_sa)
-        hist = acao.history(period="5d")
-        if len(hist) < 2:
-            return None
-            
-        preco_atual = hist['Close'].iloc[-1]
-        preco_anterior = hist['Close'].iloc[-2]
-        abertura = hist['Open'].iloc[-1]
-        maxima = hist['High'].iloc[-1]
-        minima = hist['Low'].iloc[-1]
-        volume = hist['Volume'].iloc[-1]
-        
-        variacao = preco_atual - preco_anterior
-        variacao_pct = (variacao / preco_anterior) * 100
-        
-        if volume >= 1000000:
-            vol_formatado = f"{volume/1000000:.2f}M"
-        elif volume >= 1000:
-            vol_formatado = f"{volume/1000:.2f}K"
-        else:
-            vol_formatado = str(volume)
-            
-        return {
-            "preco": preco_atual,
-            "abertura": abertura,
-            "maxima": maxima,
-            "minima": minima,
-            "volume": vol_formatado,
-            "variacao": variacao,
-            "variacao_pct": variacao_pct
-        }
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}.SA"
+        cabecalho = {'User-Agent': 'Mozilla/5.0'}
+        resposta = requests.get(url, headers=cabecalho, verify=False, timeout=5)
+        dados = resposta.json()
+        return float(dados['chart']['result'][0]['meta']['regularMarketPrice'])
     except:
         return None
 
-@st.cache_data(ttl=3600)
 def buscar_historico(ticker):
     try:
-        ticker_sa = ticker if ticker.endswith('.SA') else f"{ticker}.SA"
-        acao = yf.Ticker(ticker_sa)
-        hist = acao.history(period="6mo")
-        hist.reset_index(inplace=True)
-        if hist['Date'].dt.tz is not None:
-            hist['Date'] = hist['Date'].dt.tz_localize(None)
-        return hist[['Date', 'Close']].rename(columns={'Date': 'Data', 'Close': 'Preço'})
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}.SA?range=6mo&interval=1d"
+        cabecalho = {'User-Agent': 'Mozilla/5.0'}
+        resposta = requests.get(url, headers=cabecalho, verify=False, timeout=5)
+        dados = resposta.json()['chart']['result'][0]
+        timestamps = dados['timestamp']
+        closes = dados['indicators']['quote'][0]['close']
+        datas = [datetime.fromtimestamp(ts) for ts in timestamps]
+        return pd.DataFrame({'Data': datas, 'Preço': closes})
     except:
         return pd.DataFrame()
 
-@st.cache_data(ttl=300)
-def buscar_ibov_dolar():
-    try:
-        ibov = yf.Ticker("^BVSP").history(period="5d")
-        dolar = yf.Ticker("BRL=X").history(period="5d")
-        
-        ibov_atual = ibov['Close'].iloc[-1]
-        ibov_var = ibov_atual - ibov['Close'].iloc[-2]
-        ibov_pct = (ibov_var / ibov['Close'].iloc[-2]) * 100
-        
-        dol_atual = dolar['Close'].iloc[-1]
-        dol_var = dol_atual - dolar['Close'].iloc[-2]
-        dol_pct = (dol_var / dolar['Close'].iloc[-2]) * 100
-        
-        return {
-            "IBOV": {"preco": ibov_atual, "var": ibov_var, "pct": ibov_pct},
-            "USD": {"preco": dol_atual, "var": dol_var, "pct": dol_pct}
-        }
-    except:
-        return None
+if "carteira" not in st.session_state:
+    st.session_state["carteira"] = carregar_dados()
 
-@st.cache_data(ttl=300)
-def buscar_destaques_mercado():
-    # Radar com as ações mais negociadas e populares da B3
-    tickers = [
-        'PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'BBDC4.SA', 'B3SA3.SA', 
-        'ABEV3.SA', 'WEGE3.SA', 'RENT3.SA', 'SUZB3.SA', 'ELET3.SA', 
-        'RADL3.SA', 'PRIO3.SA', 'HAPV3.SA', 'MGLU3.SA', 'COGN3.SA', 
-        'USIM5.SA', 'CSNA3.SA', 'GGBR4.SA', 'JBSS3.SA', 'BBAS3.SA',
-        'RAIZ4.SA', 'AZZA3.SA', 'EGIE3.SA', 'BEEF3.SA', 'BRAV3.SA', 'CSMG3.SA'
-    ]
-    resultados = []
-    try:
-        df = yf.download(tickers, period="2d", progress=False)['Close']
-        if len(df) >= 2:
-            for ticker in tickers:
-                try:
-                    preco_ant = float(df[ticker].iloc[-2])
-                    preco_atu = float(df[ticker].iloc[-1])
-                    var_pct = ((preco_atu - preco_ant) / preco_ant) * 100
-                    resultados.append({
-                        "Ativo": ticker.replace(".SA", ""), 
-                        "Preço": preco_atu, 
-                        "Var%": var_pct
-                    })
-                except:
-                    continue
-    except:
-        return [], []
-        
-    # Ordena para pegar o Top 5 Altas e Top 5 Baixas
-    resultados_ordenados = sorted(resultados, key=lambda x: x["Var%"], reverse=True)
-    altas = resultados_ordenados[:5]
-    
-    baixas = resultados_ordenados[-5:]
-    baixas = sorted(baixas, key=lambda x: x["Var%"]) # Mais negativa primeiro
-    
-    return altas, baixas
+# --- INTERFACE DO APLICATIVO ---
+st.set_page_config(page_title="Meu Status Invest", page_icon="📈", layout="wide")
+st.title("📈 Meu Portfólio em Tempo Real")
 
-# ==========================================
-# --- 3. MENU LATERAL (ADICIONAR ATIVOS) ---
-# ==========================================
-with st.sidebar:
-    st.header("🛒 Adicionar Ativo")
-    novo_ticker = st.text_input("Ticker (ex: BBAS3)").upper()
-    novo_qnt = st.number_input("Quantidade", min_value=1, value=10)
-    novo_preco = st.number_input("Preço Pago (R$)", min_value=0.01, value=20.00, step=0.1)
-    nova_data = st.date_input("Data da Compra", date.today())
-    nova_carteira = st.selectbox("Carteira", st.session_state["carteiras_tabs"])
-    
-    if st.button("Adicionar à Carteira", use_container_width=True):
-        if novo_ticker:
-            st.session_state["tabela"].append({
-                "Ticker": novo_ticker,
-                "Quantidade": novo_qnt,
-                "Preço Pago": novo_preco,
-                "Data da Compra": nova_data.strftime("%d/%m/%Y"),
-                "Carteira": nova_carteira
-            })
-            st.success(f"{novo_ticker} adicionado!")
-            st.rerun()
+# =====================================================================
+# --- NOVIDADE: BARRA DE COTAÇÕES ROLANTE (TICKER TAPE) ---
+# =====================================================================
+# 1. Definimos os índices globais padrão
+simbolos_ticker = [
+    {"proName": "BMFBOVESPA:IBOV", "title": "Ibovespa"},
+    {"proName": "FX_IDC:USDBRL", "title": "Dólar (BRL)"},
+    {"proName": "BINANCE:BTCBRL", "title": "Bitcoin (BRL)"}
+]
 
-    st.divider()
-    st.header("📂 Nova Carteira")
-    nova_aba = st.text_input("Nome da Nova Carteira").upper()
-    if st.button("Criar Carteira", use_container_width=True):
-        if nova_aba and nova_aba not in st.session_state["carteiras_tabs"]:
-            st.session_state["carteiras_tabs"].append(nova_aba)
-            st.success(f"Carteira {nova_aba} criada!")
-            st.rerun()
+# 2. Adicionamos dinamicamente os ativos que você tem na carteira
+if len(st.session_state["carteira"]) > 0:
+    ativos_unicos = list(set([ativo["Ticker"] for ativo in st.session_state["carteira"]]))
+    for ativo in ativos_unicos:
+        simbolos_ticker.append({
+            "proName": f"BMFBOVESPA:{ativo}",
+            "title": ativo
+        })
 
-# ==========================================
-# --- 4. TOPO: LETREIRO ROTATIVO (MARQUEE) ---
-# ==========================================
-indices = buscar_ibov_dolar()
-if indices:
-    html_marquee = """
-    <style>
-        .ticker-wrap { width: 100%; overflow: hidden; background-color: #1E1E1E; padding: 10px 0; border-radius: 8px; border: 1px solid #333; margin-bottom: 20px;}
-        .ticker-text { font-size: 16px; font-family: sans-serif; color: #FFFFFF; font-weight: 500;}
-        .positivo { color: #00e676; }
-        .negativo { color: #ff4b4b; }
-        .divisor { margin: 0 20px; color: #555; }
-    </style>
-    <div class="ticker-wrap">
-        <marquee behavior="scroll" direction="left" scrollamount="6" class="ticker-text">
-    """
-    
-    cor_ibov = "positivo" if indices["IBOV"]["var"] >= 0 else "negativo"
-    sinal_ibov = "+" if indices["IBOV"]["var"] >= 0 else ""
-    html_marquee += f"<b>IBOV</b> {indices['IBOV']['preco']:,.0f}pts <span class='{cor_ibov}'>{sinal_ibov}{indices['IBOV']['var']:,.0f} ({sinal_ibov}{indices['IBOV']['pct']:.2f}%)</span> <span class='divisor'>|</span> "
-    
-    cor_usd = "positivo" if indices["USD"]["var"] >= 0 else "negativo"
-    sinal_usd = "+" if indices["USD"]["var"] >= 0 else ""
-    html_marquee += f"<b>DÓLAR</b> R$ {indices['USD']['preco']:.4f} <span class='{cor_usd}'>{sinal_usd}{indices['USD']['var']:.4f} ({sinal_usd}{indices['USD']['pct']:.2f}%)</span> <span class='divisor'>|</span> "
+# 3. Configuramos o JSON do Widget do TradingView
+ticker_config = {
+    "symbols": simbolos_ticker,
+    "showSymbolLogo": True,
+    "isTransparent": True,
+    "displayMode": "adaptive",
+    "colorTheme": "dark", # Troque para "light" se o seu Streamlit for claro
+    "locale": "br"
+}
 
-    ativos_unicos = list(set([d["Ticker"] for d in st.session_state["tabela"]]))
-    for ticker in ativos_unicos: 
-        info = buscar_cotacao_completa(ticker)
-        if info:
-            cor_ativo = "positivo" if info["variacao"] >= 0 else "negativo"
-            sinal_ativo = "+" if info["variacao"] >= 0 else ""
-            html_marquee += f"<b>{ticker}</b> R$ {info['preco']:.2f} <span class='{cor_ativo}'>{sinal_ativo}{info['variacao']:.2f} ({sinal_ativo}{info['variacao_pct']:.2f}%)</span> <span class='divisor'>|</span> "
-            
-    html_marquee += "</marquee></div>"
-    st.markdown(html_marquee, unsafe_allow_html=True)
+codigo_ticker = f"""
+<div class="tradingview-widget-container">
+  <div class="tradingview-widget-container__widget"></div>
+  <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
+  {json.dumps(ticker_config)}
+  </script>
+</div>
+"""
+# Renderiza a barra na tela com altura de 80 pixels
+components.html(codigo_ticker, height=80)
+# =====================================================================
 
-st.title("📈 Meu Portfólio & Acompanhamento")
-
-# ==========================================
-# --- 5. GRÁFICO E RANKING (LADO A LADO) ---
-# ==========================================
 st.subheader("🌐 Panorama do Mercado e Seus Ativos")
 
-opcoes_grafico = {"Mercado Geral (Ibovespa)": "BMFBOVESPA:IBOV"}
-ativos_graf = list(set([ativo["Ticker"] for ativo in st.session_state["tabela"]]))
-for ativo in ativos_graf:
-    opcoes_grafico[ativo] = f"BMFBOVESPA:{ativo}"
+opcoes_grafico = ["Mercado Geral (Ibovespa)"]
+if len(st.session_state["carteira"]) > 0:
+    ativos_unicos = list(set([ativo["Ticker"] for ativo in st.session_state["carteira"]]))
+    opcoes_grafico.extend(ativos_unicos)
 
-grafico_escolhido = st.selectbox("Qual gráfico você quer ver?", list(opcoes_grafico.keys()))
-simbolo_tv = opcoes_grafico[grafico_escolhido]
+grafico_escolhido = st.selectbox("Qual gráfico você quer ver?", opcoes_grafico)
 
-# --- DIVIDINDO A TELA EM 2 COLUNAS ---
-# Coluna 1 é ligeiramente maior (1.4) para acomodar o gráfico confortavelmente
-col_grafico, col_ranking = st.columns([1.4, 1.0], gap="large")
-
-with col_grafico:
-    codigo_grafico_avancado = f"""
-    <div class="tradingview-widget-container" style="height:420px;width:100%">
-      <div id="tradingview_chart" style="height:calc(100% - 32px);width:100%"></div>
+if grafico_escolhido == "Mercado Geral (Ibovespa)":
+    codigo_tradingview = """
+    <div class="tradingview-widget-container">
+      <div id="tradingview_ibov"></div>
       <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
       <script type="text/javascript">
-      new TradingView.widget(
-      {{
-      "autosize": true,
-      "symbol": "{simbolo_tv}",
-      "interval": "D",
-      "timezone": "America/Sao_Paulo",
-      "theme": "dark",
-      "style": "1",
-      "locale": "br",
-      "enable_publishing": false,
-      "backgroundColor": "rgba(19, 23, 34, 1)",
-      "gridColor": "rgba(42, 46, 57, 0.06)",
-      "hide_top_toolbar": false,
-      "hide_legend": false,
-      "save_image": false,
-      "container_id": "tradingview_chart",
-      "toolbar_bg": "#f1f3f6"
-    }}
-      );
+      new TradingView.widget({
+      "width": "100%", "height": 400, "symbol": "BMFBOVESPA:IBOV", "interval": "D",
+      "timezone": "America/Sao_Paulo", "theme": "dark", "style": "3", "locale": "br",
+      "enable_publishing": false, "hide_top_toolbar": false, "hide_legend": false,
+      "save_image": false, "container_id": "tradingview_ibov"
+    });
       </script>
     </div>
     """
-    components.html(codigo_grafico_avancado, height=420)
+    components.html(codigo_tradingview, height=400)
+else:
+    with st.spinner(f"Buscando histórico de {grafico_escolhido}..."):
+        df_hist = buscar_historico(grafico_escolhido)
+        if not df_hist.empty:
+            compras_ativo = [a for a in st.session_state["carteira"] if a["Ticker"] == grafico_escolhido]
+            qtd_total_ativo = sum(a["Quantidade"] for a in compras_ativo)
+            custo_total_ativo = sum(a["Quantidade"] * a["Preço Pago"] for a in compras_ativo)
+            preco_medio_ativo = custo_total_ativo / qtd_total_ativo if qtd_total_ativo > 0 else 0
+            
+            fig_hist = px.line(df_hist, x="Data", y="Preço", title=f"Histórico de 6 Meses - {grafico_escolhido}")
+            
+            # Linha Horizontal (PREÇO MÉDIO FINAL)
+            fig_hist.add_hline(y=preco_medio_ativo, line_dash="dash", line_color="#ff4b4b",
+                               annotation_text=f"Preço Médio (R$ {preco_medio_ativo:.2f})",
+                               annotation_position="bottom right",
+                               annotation_font_color="#ff4b4b")
+            
+            # --- Linhas Verticais com Texto (Qtd + Data) na Vertical ---
+            compras_por_data = {}
+            for compra in compras_ativo:
+                d = compra.get("Data da Compra", "N/A")
+                if d not in ["Antes da Atualização", "N/A"]:
+                    # Isola apenas a data (sem a hora, se houver) para agrupar no dia
+                    dia = d.split(" ")[0]
+                    if dia in compras_por_data:
+                        compras_por_data[dia] += compra["Quantidade"]
+                    else:
+                        compras_por_data[dia] = compra["Quantidade"]
 
-with col_ranking:
-    altas, baixas = buscar_destaques_mercado()
-    
-    st.markdown("""
-        <style>
-            .ranking-box { background-color: #1E1E1E; padding: 15px; border-radius: 8px; border: 1px solid #333; height: 420px; overflow-y: auto;}
-            .ranking-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #2b2b2b; font-size: 14px;}
-            .ticker-name { color: #4da6ff; font-weight: bold; width: 60px;}
-            .price { color: #ffffff; text-align: right; width: 70px;}
-            .pct-up { color: #00e676; text-align: right; font-weight: bold; width: 70px;}
-            .pct-down { color: #ff4b4b; text-align: right; font-weight: bold; width: 70px;}
-        </style>
-    """, unsafe_allow_html=True)
-    
-    col_altas, col_baixas = st.columns(2)
-    
-    with col_altas:
-        html_altas = "<div class='ranking-box'>"
-        html_altas += "<h4 style='color: #00e676; margin-top:0;'>⬆️ Maiores Altas</h4>"
-        if altas:
-            for item in altas:
-                html_altas += f"""
-                <div class='ranking-row'>
-                    <span class='ticker-name'>{item['Ativo']}</span>
-                    <span class='pct-up'>+{item['Var%']:.2f}%</span>
-                    <span class='price'>R$ {item['Preço']:.2f}</span>
-                </div>
-                """
+            for dia, qtd in compras_por_data.items():
+                try:
+                    data_formatada = datetime.strptime(dia, "%d/%m/%Y")
+                    fig_hist.add_vline(x=data_formatada, line_dash="dot", line_color="#00d4ff",
+                                       annotation_text=f"{int(qtd)} cotas em {dia}",
+                                       annotation_position="top left",
+                                       annotation_textangle=-90, # Deixa o texto escrito de lado (vertical)
+                                       annotation_font_color="#00d4ff")
+                except:
+                    pass
+            
+            fig_hist.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font_color="white", xaxis_title="")
+            fig_hist.update_traces(line_color="#00c698")
+            
+            st.plotly_chart(fig_hist, use_container_width=True)
         else:
-            html_altas += "<p style='color: #888;'>Buscando dados...</p>"
-        html_altas += "</div>"
-        st.markdown(html_altas, unsafe_allow_html=True)
-
-    with col_baixas:
-        html_baixas = "<div class='ranking-box'>"
-        html_baixas += "<h4 style='color: #ff4b4b; margin-top:0;'>⬇️ Maiores Baixas</h4>"
-        if baixas:
-            for item in baixas:
-                html_baixas += f"""
-                <div class='ranking-row'>
-                    <span class='ticker-name'>{item['Ativo']}</span>
-                    <span class='pct-down'>{item['Var%']:.2f}%</span>
-                    <span class='price'>R$ {item['Preço']:.2f}</span>
-                </div>
-                """
-        else:
-            html_baixas += "<p style='color: #888;'>Buscando dados...</p>"
-        html_baixas += "</div>"
-        st.markdown(html_baixas, unsafe_allow_html=True)
+            st.warning("Não foi possível carregar o histórico desse ativo.")
 
 st.divider()
 
-# ==========================================
-# --- 6. ABAS DAS CARTEIRAS ESTILO INVESTING ---
-# ==========================================
-abas = st.tabs(st.session_state["carteiras_tabs"])
+# --- BARRA LATERAL ---
+st.sidebar.header("Cadastrar Novo Aporte")
 
-for i, carteira_nome in enumerate(st.session_state["carteiras_tabs"]):
-    with abas[i]:
-        st.subheader(f"Lista de Ativos: {carteira_nome}")
+ticker_input = st.sidebar.text_input("Código do Ativo (Ex: PETR4)", value="PETR4").upper().strip()
+
+preco_atual_sidebar = None
+if ticker_input:
+    with st.sidebar.spinner("Buscando preço..."):
+        preco_atual_sidebar = buscar_cotacao(ticker_input)
         
-        carteira_atual = [d for d in st.session_state["tabela"] if d["Carteira"] == carteira_nome]
-        
-        if not carteira_atual:
-            st.info("Carteira vazia. Adicione ativos pelo menu lateral.")
-            continue
-            
-        df = pd.DataFrame(carteira_atual)
-        df['Custo Total'] = df['Quantidade'] * df['Preço Pago']
-        
-        tabelas = []
-        total_investido = 0
-        total_atual = 0
-        
-        for idx, row in df.iterrows():
+    if preco_atual_sidebar:
+        st.sidebar.metric(label=f"Cotação Atual ({ticker_input})", value=f"R$ {preco_atual_sidebar:.2f}")
+
+data_compra_input = st.sidebar.date_input("Data da Compra", value=datetime.today())
+qtd_input = st.sidebar.number_input("Quantidade (Coloque 0 se quiser apenas editar a data da última)", min_value=0, value=10)
+
+valor_padrao_preco = float(preco_atual_sidebar) if preco_atual_sidebar else 35.00
+preco_medio_input = st.sidebar.number_input("Preço da Compra (R$)", min_value=0.01, value=valor_padrao_preco, step=0.01)
+
+total_simulado = qtd_input * preco_medio_input
+st.sidebar.info(f"**Total da Ordem: R$ {total_simulado:,.2f}**")
+
+col_btn1, col_btn2 = st.sidebar.columns(2)
+
+if col_btn1.button("Salvar Ativo"):
+    data_str = data_compra_input.strftime("%d/%m/%Y")
+    
+    if qtd_input > 0:
+        st.session_state["carteira"].append({
+            "Ticker": ticker_input,
+            "Quantidade": qtd_input,
+            "Preço Pago": preco_medio_input,
+            "Data da Compra": data_str
+        })
+    else:
+        for ativo in reversed(st.session_state["carteira"]):
+            if ativo["Ticker"] == ticker_input:
+                ativo["Data da Compra"] = data_str
+                break
+                
+    st.session_state["carteira"] = salvar_dados(st.session_state["carteira"])
+    st.sidebar.success(f"{ticker_input} salvo no histórico!")
+    st.rerun()
+
+if col_btn2.button("Limpar Tudo"):
+    st.session_state["carteira"] = []
+    if os.path.exists(ARQUIVO_BANCO):
+        os.remove(ARQUIVO_BANCO)
+    st.rerun()
+
+# --- CÁLCULO GERAL DA CARTEIRA E TABELAS ---
+if len(st.session_state["carteira"]) > 0:
+    st.subheader("Sua Posição Consolidada")
+    
+    df_ledger = pd.DataFrame(st.session_state["carteira"])
+    df_ledger["Custo da Operação"] = df_ledger["Quantidade"] * df_ledger["Preço Pago"]
+    
+    df_agrupado = df_ledger.groupby('Ticker').agg({
+        'Quantidade': 'sum',
+        'Custo da Operação': 'sum'
+    }).reset_index()
+    
+    df_agrupado['Preço Médio'] = df_agrupado.apply(
+        lambda row: row['Custo da Operação'] / row['Quantidade'] if row['Quantidade'] > 0 else 0, axis=1
+    )
+    
+    dados_brutos = [] 
+    valor_total_investido = 0
+    valor_total_atual = 0
+    
+    with st.spinner("Atualizando valores da carteira..."):
+        for index, row in df_agrupado.iterrows():
             ticker = row['Ticker']
-            qnt = row['Quantidade']
-            preco_pago = row['Preço Pago']
-            custo = row['Custo Total']
+            qtd_total = row['Quantidade']
+            preco_medio = row['Preço Médio']
+            custo_total = row['Custo da Operação']
             
-            info = buscar_cotacao_completa(ticker)
-            if info:
-                preco_atual = info['preco']
-                v_atual = qnt * preco_atual
-                lucro = v_atual - custo
+            preco_atual = buscar_cotacao(ticker)
+            
+            if preco_atual is not None:
+                valor_atual_total = qtd_total * preco_atual
+                lucro_prejuizo = valor_atual_total - custo_total
+                rentabilidade = (lucro_prejuizo / custo_total) * 100 if custo_total > 0 else 0
                 
-                total_investido += custo
-                total_atual += v_atual
+                categoria = "FIIs" if ticker.endswith('11') else "Ações"
                 
-                tabelas.append({
-                    "Códigos": ticker,
-                    "Último": preco_atual,
-                    "Abertura": info['abertura'],
-                    "Máxima": info['maxima'],
-                    "Mínima": info['minima'],
-                    "Variação": info['variacao'],
-                    "Var%": info['variacao_pct']/100,
-                    "Vol.": info['volume'],
-                    "Qtd": int(qnt),
-                    "Preço Pago": preco_pago,
-                    "Lucro/Prej.": lucro
+                valor_total_investido += custo_total
+                valor_total_atual += valor_atual_total
+                
+                dados_brutos.append({
+                    "Categoria": categoria,
+                    "Ativo": ticker,
+                    "Qtd Total": int(qtd_total),
+                    "Preço Médio": preco_medio,
+                    "Preço Atual": preco_atual,
+                    "Custo Total": custo_total,
+                    "Valor Atual": valor_atual_total,
+                    "Lucro/Prejuízo": lucro_prejuizo,
+                    "Rentabilidade (%)": rentabilidade
                 })
-                
-        if tabelas:
-            df_view = pd.DataFrame(tabelas)
             
-            def style_row(val):
-                if pd.isna(val):
-                    return ''
-                color = '#00e676' if val > 0 else '#ff4b4b' 
-                return f'color: {color}; font-weight: bold;'
-                
-            styled = df_view.style.format({
-                "Último": "{:.2f}",
-                "Abertura": "{:.2f}",
-                "Máxima": "{:.2f}",
-                "Mínima": "{:.2f}",
-                "Variação": "{:+.2f}",
-                "Var%": "{:+.2%}",
-                "Preço Pago": "R$ {:.2f}",
-                "Lucro/Prej.": "R$ {:+.2f}"
-            }).map(
-                lambda v: style_row(v) if isinstance(v, (int, float)) and v != 0 else '', 
-                subset=["Variação", "Var%", "Lucro/Prej."]
-            )
-            
-            st.dataframe(styled, use_container_width=True, hide_index=True)
-            
-            st.write("---")
-            col1, col2, col3 = st.columns(3)
-            resultado = total_atual - total_investido
-            rent = (resultado/total_investido)*100 if total_investido > 0 else 0
-            
-            col1.metric("Investido nesta Carteira", f"R$ {total_investido:,.2f}")
-            col2.metric("Patrimônio Atual", f"R$ {total_atual:,.2f}", f"R$ {resultado:,.2f}")
-            col3.metric("Rentabilidade", f"{rent:.2f}%")
-            
-            with st.expander(f"📊 Ver Histórico e Gráficos ({carteira_nome})"):
-                ativo_grafico = st.selectbox("Escolha o ativo para ver o gráfico de linha:", df['Ticker'].unique(), key=f"graf_{carteira_nome}")
-                df_hist = buscar_historico(ativo_grafico)
-                if not df_hist.empty:
-                    p = px.line(df_hist, x='Data', y='Preço', title=f"Histórico de 6 Meses - {ativo_grafico}")
-                    st.plotly_chart(p, use_container_width=True)
+    if dados_brutos:
+        df_formatado = pd.DataFrame(dados_brutos).copy()
+        for col in ["Preço Médio", "Preço Atual", "Custo Total", "Valor Atual", "Lucro/Prejuízo"]:
+            df_formatado[col] = df_formatado[col].apply(lambda x: f"R$ {x:,.2f}")
+        df_formatado["Rentabilidade (%)"] = df_formatado["Rentabilidade (%)"].apply(lambda x: f"{x:,.2f}%")
+        
+        st.dataframe(df_formatado.drop(columns=["Categoria"]), use_container_width=True)
+        
+        with st.expander("🛒 Ver Histórico Detalhado de Compras (Livro de Ordens)"):
+            df_historico_tela = df_ledger.copy()
+            df_historico_tela = df_historico_tela[["Data da Compra", "Ticker", "Quantidade", "Preço Pago", "Custo da Operação"]]
+            df_historico_tela["Preço Pago"] = df_historico_tela["Preço Pago"].apply(lambda x: f"R$ {x:,.2f}")
+            df_historico_tela["Custo da Operação"] = df_historico_tela["Custo da Operação"].apply(lambda x: f"R$ {x:,.2f}")
+            st.dataframe(df_historico_tela, use_container_width=True)
+        
+        st.divider()
+        
+        st.subheader("Resumo Global")
+        col1, col2, col3 = st.columns(3)
+        resultado_global = valor_total_atual - valor_total_investido
+        
+        col1.metric("Totalmente Investido", f"R$ {valor_total_investido:,.2f}")
+        col2.metric("Patrimônio Atual", f"R$ {valor_total_atual:,.2f}", f"R$ {resultado_global:,.2f}")
+        col3.metric("Rentabilidade Geral", f"{((resultado_global/valor_total_investido)*100 if valor_total_investido > 0 else 0):,.2f} %")
+        
+        st.divider()
+        
+        st.subheader("📊 Distribuição do Patrimônio")
+        df_graficos = pd.DataFrame(dados_brutos)
+        
+        col_graf1, col_graf2 = st.columns(2)
+        
+        df_pizza = df_graficos.groupby('Categoria')['Valor Atual'].sum().reset_index()
+        fig_pizza = px.pie(df_pizza, values='Valor Atual', names='Categoria', hole=0.4, 
+                           title="Divisão da Carteira", color_discrete_sequence=['#00c698', '#1b4d3e'])
+        col_graf1.plotly_chart(fig_pizza, use_container_width=True)
+        
+        df_graficos = df_graficos.sort_values(by="Valor Atual", ascending=False)
+        fig_barras = px.bar(df_graficos, x='Ativo', y='Valor Atual', color='Categoria',
+                            title="Patrimônio por Ativo", text_auto='.2s', 
+                            color_discrete_map={"Ações": "#1b4d3e", "FIIs": "#00c698"})
+        col_graf2.plotly_chart(fig_barras, use_container_width=True)
+
+else:
+    st.info("Sua carteira está vazia. Cadastre seus aportes no menu lateral!")
