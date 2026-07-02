@@ -245,14 +245,17 @@ def criar_cartao_html(titulo, valor, variacao, pct, prefixo="", watchlist=False)
     sinal = "+" if variacao >= 0 else ""
     borda = "2px solid #378ADD" if watchlist else "1px solid #2B3040"
     selo = '<div style="color:#378ADD; font-size:11px; margin-bottom:4px;">👁️ WATCHLIST</div>' if watchlist else ""
-    return f"""
-    <div style="background-color: #161A25; padding: 15px; border-radius: 8px; border: {borda}; text-align: center; margin-bottom: 15px;">
-        {selo}
-        <div style="color: #A0AEC0; font-size: 14px; font-weight: bold; margin-bottom: 5px;">{titulo}</div>
-        <div style="font-size: 22px; font-weight: bold; color: white;">{prefixo}{valor}</div>
-        <div style="color: {cor}; font-size: 14px; margin-top: 5px;">{sinal}{variacao:.2f} ({sinal}{pct:.2f}%)</div>
-    </div>
-    """
+    # Montado em uma linha so (sem quebras/indentacao) para o st.markdown
+    # nunca interpretar como bloco de codigo quando 'selo' fica vazio.
+    partes = [
+        f'<div style="background-color: #161A25; padding: 15px; border-radius: 8px; border: {borda}; text-align: center; margin-bottom: 15px;">',
+        selo,
+        f'<div style="color: #A0AEC0; font-size: 14px; font-weight: bold; margin-bottom: 5px;">{titulo}</div>',
+        f'<div style="font-size: 22px; font-weight: bold; color: white;">{prefixo}{valor}</div>',
+        f'<div style="color: {cor}; font-size: 14px; margin-top: 5px;">{sinal}{variacao:.2f} ({sinal}{pct:.2f}%)</div>',
+        '</div>',
+    ]
+    return "".join(partes)
 
 # Cria uma lista dinâmica com TODOS os cartões que precisam aparecer
 cartoes = []
