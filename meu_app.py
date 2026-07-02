@@ -6,6 +6,7 @@ import os
 import plotly.express as px
 import streamlit.components.v1 as components
 from datetime import datetime
+import json # <-- Adicionado para configurar o widget de cotações
 
 # --- DESLIGANDO ALERTAS DE SEGURANÇA ---
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -58,6 +59,47 @@ if "carteira" not in st.session_state:
 st.set_page_config(page_title="Meu Status Invest", page_icon="📈", layout="wide")
 st.title("📈 Meu Portfólio em Tempo Real")
 
+# =====================================================================
+# --- NOVIDADE: BARRA DE COTAÇÕES ROLANTE (TICKER TAPE) ---
+# =====================================================================
+# 1. Definimos os índices globais padrão
+simbolos_ticker = [
+    {"proName": "BMFBOVESPA:IBOV", "title": "Ibovespa"},
+    {"proName": "FX_IDC:USDBRL", "title": "Dólar (BRL)"},
+    {"proName": "BINANCE:BTCBRL", "title": "Bitcoin (BRL)"}
+]
+
+# 2. Adicionamos dinamicamente os ativos que você tem na carteira
+if len(st.session_state["carteira"]) > 0:
+    ativos_unicos = list(set([ativo["Ticker"] for ativo in st.session_state["carteira"]]))
+    for ativo in ativos_unicos:
+        simbolos_ticker.append({
+            "proName": f"BMFBOVESPA:{ativo}",
+            "title": ativo
+        })
+
+# 3. Configuramos o JSON do Widget do TradingView
+ticker_config = {
+    "symbols": simbolos_ticker,
+    "showSymbolLogo": True,
+    "isTransparent": True,
+    "displayMode": "adaptive",
+    "colorTheme": "dark", # Troque para "light" se o seu Streamlit for claro
+    "locale": "br"
+}
+
+codigo_ticker = f"""
+<div class="tradingview-widget-container">
+  <div class="tradingview-widget-container__widget"></div>
+  <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
+  {json.dumps(ticker_config)}
+  </script>
+</div>
+"""
+# Renderiza a barra na tela com altura de 80 pixels
+components.html(codigo_ticker, height=80)
+# =====================================================================
+
 st.subheader("🌐 Panorama do Mercado e Seus Ativos")
 
 opcoes_grafico = ["Mercado Geral (Ibovespa)"]
@@ -100,7 +142,7 @@ else:
                                annotation_position="bottom right",
                                annotation_font_color="#ff4b4b")
             
-            # --- NOVIDADE: Linhas Verticais com Texto (Qtd + Data) na Vertical ---
+            # --- Linhas Verticais com Texto (Qtd + Data) na Vertical ---
             compras_por_data = {}
             for compra in compras_ativo:
                 d = compra.get("Data da Compra", "N/A")
