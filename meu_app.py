@@ -11,6 +11,22 @@ from streamlit_searchbox import st_searchbox
 # Configuração para usar o ecrã inteiro
 st.set_page_config(page_title="Meu Portfólio", page_icon="📈", layout="wide")
 
+# 🚀 INJEÇÃO DE CSS: Remove o espaço vazio gigante do topo do Streamlit
+st.markdown("""
+    <style>
+        /* Remove o recuo superior e inferior do container principal */
+        .main .block-container {
+            padding-top: 0px !important;
+            padding-bottom: 0px !important;
+        }
+        /* Zera o tamanho do header nativo invisível do Streamlit */
+        header[data-testid="stHeader"] {
+            height: 0px !important;
+            background: transparent !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 # ==========================================
 # --- 0. LISTA DE TICKERS (B3) PARA BUSCA INTELIGENTE ---
 # ==========================================
@@ -313,7 +329,7 @@ with st.sidebar:
             })
         else:
             for ativo in reversed(st.session_state["carteira"]):
-                if ativo["Ticker"] == ticker_input and ativo.get("Carteira", "COMPRAS (Real)") == carteira_selecionada:
+                if ativo["Ticker"] == ticker_input bottlenecks and ativo.get("Carteira", "COMPRAS (Real)") == carteira_selecionada:
                     ativo["Data da Compra"] = data_str
                     break
         st.session_state["carteira"] = salvar_dados(st.session_state["carteira"])
@@ -382,7 +398,6 @@ def criar_cartao_html(titulo, valor, variacao, pct, prefixo="", watchlist=False)
     )
 
 cartoes = []
-# 🚀 PROTEÇÃO ULTRA CONTRA KEYERROR: Só monta o cartão se a chave existir no retorno da API
 if indices:
     if "IBOV" in indices:
         cartoes.append(("Ibovespa", f"{indices['IBOV']['preco']:,.0f}", indices['IBOV']['var'], indices['IBOV']['pct'], "", False))
