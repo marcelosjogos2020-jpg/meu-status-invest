@@ -11,18 +11,22 @@ from streamlit_searchbox import st_searchbox
 # Configuração para usar o ecrã inteiro
 st.set_page_config(page_title="Meu Portfólio", page_icon="📈", layout="wide")
 
-# Remove o espaço vazio gigante do topo do Streamlit
+# 🚀 SUPER RESET DE CSS: Força o conteúdo a grudar no topo da página
 st.markdown("""
     <style>
-        /* Remove o recuo superior e inferior do container principal */
-        .main .block-container {
-            padding-top: 0px !important;
-            padding-bottom: 0px !important;
-        }
-        /* Zera o tamanho do header nativo invisível do Streamlit */
-        header[data-testid="stHeader"] {
+        /* Esconde completamente o header invisível do Streamlit */
+        [data-testid="stHeader"] {
+            display: none !important;
             height: 0px !important;
-            background: transparent !important;
+        }
+        /* Zera o padding do container de conteúdo principal em todas as versões do Streamlit */
+        .main .block-container, div[data-testid="stAppViewBlockContainer"] {
+            padding-top: 0px !important;
+            margin-top: 0px !important;
+        }
+        /* Remove espaços indesejados abaixo do primeiro elemento renderizado */
+        iframe {
+            margin-top: 0px !important;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -329,7 +333,6 @@ with st.sidebar:
             })
         else:
             for ativo in reversed(st.session_state["carteira"]):
-                # 🚀 CORRIGIDO: Removido a palavra intrusa daqui
                 if ativo["Ticker"] == ticker_input and ativo.get("Carteira", "COMPRAS (Real)") == carteira_selecionada:
                     ativo["Data da Compra"] = data_str
                     break
