@@ -209,7 +209,8 @@ def buscar_indices_topo():
                 ant = hist['Close'].iloc[-2]
                 var = atual - ant
                 pct = (var / ant) * 100
-                dados[nome] = {"preco": current_val := atual, "var": var, "pct": pct}
+                # 🚀 CORRIGIDO: Removido o walrus operator problemático daqui
+                dados[nome] = {"preco": atual, "var": var, "pct": pct}
         return dados
     except Exception:
         return None
@@ -362,13 +363,12 @@ codigo_letreiro = f"""
 components.html(codigo_letreiro, height=75)
 
 # ==========================================
-# --- 4. TOPO: CARTÕES ULTRA COMPACTOS (CORRIGIDOS) ---
+# --- 4. TOPO: CARTÕES ULTRA COMPACTOS ---
 # ==========================================
 st.title("📈 Meu Portfólio & Acompanhamento")
 
 indices = buscar_indices_topo()
 
-# 🚀 CORREÇÃO E ENXUGAMENTO AQUI: Layout 100% compacto para caber dezenas de ativos
 def criar_cartao_html(titulo, valor, variacao, pct, prefixo="", watchlist=False):
     cor = "#00e676" if variacao >= 0 else "#ff4b4b"
     sinal = "+" if variacao >= 0 else ""
@@ -402,7 +402,6 @@ for ticker in ativos_ativos:
         is_watch = ativos_com_carteira[ticker].upper() in CARTEIRAS_FORA_DO_PATRIMONIO
         cartoes.append((ticker, f"{info['preco']:.2f}", info['var'], info['pct'], "R$ ", is_watch))
 
-# 🚀 DISTRIBUIÇÃO EM GRANDE ESCALA: Agora agrupa em linhas de 8 colunas para caber tudo compacto
 COLUNAS_POR_LINHA = 8
 if cartoes:
     for i in range(0, len(cartoes), COLUNAS_POR_LINHA):
