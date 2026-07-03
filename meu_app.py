@@ -11,7 +11,7 @@ from streamlit_searchbox import st_searchbox
 # Configuração para usar o ecrã inteiro
 st.set_page_config(page_title="Meu Portfólio", page_icon="📈", layout="wide")
 
-# 🚀 RESET TOTAL DE CSS: Cola tudo no topo e gerencia o estilo dos mini-cards
+# 🚀 RESET TOTAL DE CSS: Cola tudo no topo, ajusta mini-cards e nivela as abas da direita
 st.markdown("""
     <style>
         /* Esconde o cabeçalho nativo do Streamlit */
@@ -38,6 +38,11 @@ st.markdown("""
         
         iframe {
             margin-top: 0px !important;
+        }
+
+        /* 🚀 NOVO: Puxa as abas da direita para cima para alinhar perfeitamente com o Panorama da esquerda */
+        div[data-testid="stTabs"] {
+            margin-top: -42px !important;
         }
 
         /* Estilo dos Mini-Cards Super Compactos do Topo */
@@ -462,7 +467,7 @@ for ticker in ativos_ativos:
         is_watch = ativos_com_carteira[ticker].upper() in CARTEIRAS_FORA_DO_PATRIMONIO
         cartoes.append((ticker, f"{info['preco']:.2f}", info['var'], info['pct'], "R$ ", is_watch))
 
-COLUNAS_POR_LINHA = 10  # 🚀 Ajustado para 10 colunas para deixar os cards ainda menores horizontalmente
+COLUNAS_POR_LINHA = 10
 if cartoes:
     for i in range(0, len(cartoes), COLUNAS_POR_LINHA):
         cols_topo = st.columns(COLUNAS_POR_LINHA)
@@ -473,7 +478,7 @@ if cartoes:
                     st.markdown(criar_cartao_html(titulo, valor, var, pct, prefixo, is_watch), unsafe_allow_html=True)
 
 # ==========================================
-# --- 5. ESTRUTURA PRINCIPAL NIVELADA ---
+# --- 5. ESTRUTURA PRINCIPAL ---
 # ==========================================
 col_esq, col_dir = st.columns([1.2, 1.0], gap="large")
 
@@ -520,7 +525,6 @@ with col_esq:
             c_bar.plotly_chart(fig_bar, use_container_width=True)
 
 with col_dir:
-    # 🚀 Nivelado perfeitamente com o início do Panorama do Mercado à esquerda
     abas = st.tabs(carteiras_existentes)
     for i, nome_carteira in enumerate(carteiras_existentes):
         with abas[i]:
