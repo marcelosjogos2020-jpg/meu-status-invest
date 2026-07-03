@@ -209,7 +209,6 @@ def buscar_indices_topo():
                 ant = hist['Close'].iloc[-2]
                 var = atual - ant
                 pct = (var / ant) * 100
-                # 🚀 CORRIGIDO: Removido o walrus operator problemático daqui
                 dados[nome] = {"preco": atual, "var": var, "pct": pct}
         return dados
     except Exception:
@@ -383,10 +382,14 @@ def criar_cartao_html(titulo, valor, variacao, pct, prefixo="", watchlist=False)
     )
 
 cartoes = []
+# 🚀 PROTEÇÃO ULTRA CONTRA KEYERROR: Só monta o cartão se a chave existir no retorno da API
 if indices:
-    cartoes.append(("Ibovespa", f"{indices['IBOV']['preco']:,.0f}", indices['IBOV']['var'], indices['IBOV']['pct'], "", False))
-    cartoes.append(("Dólar", f"{indices['USD']['preco']:.4f}", indices['USD']['var'], indices['USD']['pct'], "R$ ", False))
-    cartoes.append(("Bitcoin", f"{indices['BTC']['preco']:,.0f}", indices['BTC']['var'], indices['BTC']['pct'], "R$ ", False))
+    if "IBOV" in indices:
+        cartoes.append(("Ibovespa", f"{indices['IBOV']['preco']:,.0f}", indices['IBOV']['var'], indices['IBOV']['pct'], "", False))
+    if "USD" in indices:
+        cartoes.append(("Dólar", f"{indices['USD']['preco']:.4f}", indices['USD']['var'], indices['USD']['pct'], "R$ ", False))
+    if "BTC" in indices:
+        cartoes.append(("Bitcoin", f"{indices['BTC']['preco']:,.0f}", indices['BTC']['var'], indices['BTC']['pct'], "R$ ", False))
 
 ativos_com_carteira = {}
 for a in st.session_state["carteira"]:
