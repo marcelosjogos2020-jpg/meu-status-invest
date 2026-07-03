@@ -11,22 +11,35 @@ from streamlit_searchbox import st_searchbox
 # Configuração para usar o ecrã inteiro
 st.set_page_config(page_title="Meu Portfólio", page_icon="📈", layout="wide")
 
-# 🚀 SUPER RESET DE CSS: Força o conteúdo a grudar no topo da página
+# 🚀 RESET TOTAL DE CSS: Zera todas as margens e paddings superiores possíveis do Streamlit
 st.markdown("""
     <style>
-        /* Esconde completamente o header invisível do Streamlit */
+        /* Esconde o cabeçalho/barra nativa do Streamlit */
         [data-testid="stHeader"] {
             display: none !important;
             height: 0px !important;
+            opacity: 0 !important;
         }
-        /* Zera o padding do container de conteúdo principal em todas as versões do Streamlit */
-        .main .block-container, div[data-testid="stAppViewBlockContainer"] {
+        
+        /* Zera o padding superior de todos os containers de layout conhecidos */
+        .main .block-container, 
+        [data-testid="stAppViewBlockContainer"],
+        [data-testid="stMainBlockContainer"],
+        [data-testid="stVerticalBlockRoot"] {
             padding-top: 0px !important;
             margin-top: 0px !important;
         }
-        /* Remove espaços indesejados abaixo do primeiro elemento renderizado */
-        iframe {
+
+        /* Remove margens extras do primeiro bloco de elementos da página */
+        [data-testid="stVerticalBlock"] > div:first-child {
             margin-top: 0px !important;
+            padding-top: 0px !important;
+        }
+        
+        /* Zera margens de iframes ou blocos HTML injetados no início */
+        .element-container:first-child, div.stHtml:first-child {
+            margin-top: 0px !important;
+            padding-top: 0px !important;
         }
     </style>
 """, unsafe_allow_html=True)
