@@ -167,9 +167,7 @@ def buscar_cotacoes_lote(tickers):
     tickers_sa = [t if t.endswith(('.SA', '-BRL', '=X', '^')) else f"{t}.SA" for t in tickers]
     precos = {}
     try:
-        # Puxa 2 dias para calcular a variação percentual diária real
         dados = yf.download(tickers=tickers_sa, period="2d", progress=False)
-        
         for t, t_sa in zip(tickers, tickers_sa):
             try:
                 if isinstance(dados.columns, pd.MultiIndex):
@@ -364,25 +362,26 @@ codigo_letreiro = f"""
 components.html(codigo_letreiro, height=75)
 
 # ==========================================
-# --- 4. TOPO: CARTÕES FIXOS ---
+# --- 4. TOPO: CARTÕES FIXOS (CORRIGIDOS) ---
 # ==========================================
 st.title("📈 Meu Portfólio & Acompanhamento")
 
 indices = buscar_indices_topo()
 
+# 🚀 CORREÇÃO AQUI: String limpa e sem recuos/tabs estruturais para evitar falso Markdown Codeblock
 def criar_cartao_html(titulo, valor, variacao, pct, prefixo="", watchlist=False):
     cor = "#00e676" if variacao >= 0 else "#ff4b4b"
     sinal = "+" if variacao >= 0 else ""
     borda = "2px solid #378ADD" if watchlist else "1px solid #2B3040"
-    selo = '<div style="color:#378ADD; font-size:11px; margin-bottom:4px;">👁️ WATCHLIST</div>' if watchlist else ""
-    return f"""
-    <div style="background-color: #161A25; padding: 15px; border-radius: 8px; border: {borda}; text-align: center; margin-bottom: 15px;">
-        {selo}
-        <div style="color: #A0AEC0; font-size: 14px; font-weight: bold; margin-bottom: 5px;">{titulo}</div>
-        <div style="font-size: 22px; font-weight: bold; color: white;">{prefixo}{valor}</div>
-        <div style="color: {cor}; font-size: 14px; margin-top: 5px;">{sinal}{variacao:.2f} ({sinal}{pct:.2f}%)</div>
-    </div>
-    """
+    selo = '<div style="color:#378ADD; font-size:11px; margin-bottom:4px;">👁️ WATCHLIST</div>' if watchlist else ''
+    return (
+        f'<div style="background-color: #161A25; padding: 15px; border-radius: 8px; border: {borda}; text-align: center; margin-bottom: 15px;">'
+        f'{selo}'
+        f'<div style="color: #A0AEC0; font-size: 14px; font-weight: bold; margin-bottom: 5px;">{titulo}</div>'
+        f'<div style="font-size: 22px; font-weight: bold; color: white;">{prefixo}{valor}</div>'
+        f'<div style="color: {cor}; font-size: 14px; margin-top: 5px;">{sinal}{variacao:.2f} ({sinal}{pct:.2f}%)</div>'
+        f'</div>'
+    )
 
 cartoes = []
 if indices:
@@ -508,7 +507,6 @@ with col_dir:
                     pm_ativo = df_agrupado[df_agrupado['Ticker'] == ativo_graf_aba]['Preço Médio'].values[0]
                     fig_linha.add_hline(y=pm_ativo, line_dash="dash", line_color="#ff4b4b", annotation_text=f"PM: R$ {pm_ativo:.2f}")
 
-                    # 🚀 ADICIONADO: Marcador vertical dinâmico para cada compra realizada
                     compras_ativo = df_ledger[df_ledger['Ticker'] == ativo_graf_aba]
                     for _, compra in compras_ativo.iterrows():
                         try:
