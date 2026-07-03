@@ -11,7 +11,7 @@ from streamlit_searchbox import st_searchbox
 # Configuração para usar o ecrã inteiro
 st.set_page_config(page_title="Meu Portfólio", page_icon="📈", layout="wide")
 
-# 🚀 INJEÇÃO DE CSS: Remove o espaço vazio gigante do topo do Streamlit
+# Remove o espaço vazio gigante do topo do Streamlit
 st.markdown("""
     <style>
         /* Remove o recuo superior e inferior do container principal */
@@ -329,7 +329,8 @@ with st.sidebar:
             })
         else:
             for ativo in reversed(st.session_state["carteira"]):
-                if ativo["Ticker"] == ticker_input bottlenecks and ativo.get("Carteira", "COMPRAS (Real)") == carteira_selecionada:
+                # 🚀 CORRIGIDO: Removido a palavra intrusa daqui
+                if ativo["Ticker"] == ticker_input and ativo.get("Carteira", "COMPRAS (Real)") == carteira_selecionada:
                     ativo["Data da Compra"] = data_str
                     break
         st.session_state["carteira"] = salvar_dados(st.session_state["carteira"])
