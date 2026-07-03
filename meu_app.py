@@ -11,7 +11,7 @@ from streamlit_searchbox import st_searchbox
 # Configuração para usar o ecrã inteiro
 st.set_page_config(page_title="Meu Portfólio", page_icon="📈", layout="wide")
 
-# 🚀 RESET TOTAL DE CSS: Cola tudo no topo, ajusta mini-cards e nivela as abas da direita
+# 🚀 RESET TOTAL DE CSS: Cola tudo no topo e gerencia o estilo dos mini-cards
 st.markdown("""
     <style>
         /* Esconde o cabeçalho nativo do Streamlit */
@@ -38,11 +38,6 @@ st.markdown("""
         
         iframe {
             margin-top: 0px !important;
-        }
-
-        /* 🚀 NOVO: Puxa as abas da direita para cima para alinhar perfeitamente com o Panorama da esquerda */
-        div[data-testid="stTabs"] {
-            margin-top: -42px !important;
         }
 
         /* Estilo dos Mini-Cards Super Compactos do Topo */
@@ -425,10 +420,8 @@ codigo_letreiro = f"""
 components.html(codigo_letreiro, height=75)
 
 # ==========================================
-# --- 4. TOPO: CARTÕES ULTRA COMPACTOS ---
+# --- PREPARAÇÃO DOS DADOS DO TOPO ---
 # ==========================================
-st.markdown("### 📊 Meu Portfólio & Acompanhamento")
-
 indices = buscar_indices_topo()
 
 def criar_cartao_html(titulo, valor, variacao, pct, prefixo="", watchlist=False):
@@ -467,22 +460,28 @@ for ticker in ativos_ativos:
         is_watch = ativos_com_carteira[ticker].upper() in CARTEIRAS_FORA_DO_PATRIMONIO
         cartoes.append((ticker, f"{info['preco']:.2f}", info['var'], info['pct'], "R$ ", is_watch))
 
-COLUNAS_POR_LINHA = 10
-if cartoes:
-    for i in range(0, len(cartoes), COLUNAS_POR_LINHA):
-        cols_topo = st.columns(COLUNAS_POR_LINHA)
-        for j in range(COLUNAS_POR_LINHA):
-            if i + j < len(cartoes):
-                titulo, valor, var, pct, prefixo, is_watch = cartoes[i+j]
-                with cols_topo[j]:
-                    st.markdown(criar_cartao_html(titulo, valor, var, pct, prefixo, is_watch), unsafe_allow_html=True)
-
 # ==========================================
-# --- 5. ESTRUTURA PRINCIPAL ---
+# --- 5. ESTRUTURA PRINCIPAL (CORRIGIDA) ---
 # ==========================================
+# Criamos as colunas master primeiro. Assim, tudo que está dentro de col_dir começará no topo absoluto.
 col_esq, col_dir = st.columns([1.2, 1.0], gap="large")
 
+# --- COLUNA DA ESQUERDA (Título, Mini-Cards, Panorama, Gráficos) ---
 with col_esq:
+    # 🚀 O Título e os Mini-Cards agora moram dentro da coluna esquerda!
+    st.markdown("### 📊 Meu Portfólio & Acompanhamento", unsafe_allow_html=True)
+    
+    # Renderiza a grade de mini-cards compactada dentro do espaço da coluna esquerda
+    COLUNAS_INTERNAS = 4
+    if cartoes:
+        for i in range(0, len(cartoes), COLUNAS_INTERNAS):
+            cols_sub = st.columns(COLUNAS_INTERNAS)
+            for j in range(COLUNAS_INTERNAS):
+                if i + j < len(cartoes):
+                    titulo, valor, var, pct, prefixo, is_watch = cartoes[i+j]
+                    with cols_sub[j]:
+                        st.markdown(criar_cartao_html(titulo, valor, var, pct, prefixo, is_watch), unsafe_allow_html=True)
+
     st.subheader("🌐 Panorama do Mercado")
     ativos_reais_grafico = [a["Ticker"] for a in st.session_state["carteira"] if a["Ticker"] != "CAIXA" and eh_patrimonio_real(a)]
     opcoes_grafico = {"Ibovespa": "BMFBOVESPA:IBOV"}
@@ -524,7 +523,9 @@ with col_esq:
             fig_bar.update_layout(margin=dict(t=0, b=0, l=0, r=0), paper_bgcolor='rgba(0,0,0,0)', font_color="white")
             c_bar.plotly_chart(fig_bar, use_container_width=True)
 
+# --- Coluna da Direita (Aba de Compras e Resumos) ---
 with col_dir:
+    # 🚀 Como o contêiner inicia aqui no topo junto com a col_esq, as abas vão se alinhar perfeitamente!
     abas = st.tabs(carteiras_existentes)
     for i, nome_carteira in enumerate(carteiras_existentes):
         with abas[i]:
