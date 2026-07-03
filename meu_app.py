@@ -80,7 +80,7 @@ TICKERS_B3 = {
     "BBSE3": "BB Seguridade ON",
     "PSSA3": "Porto Seguro ON",
     "SBSP3": "Sabesp ON",
-    "GARE11": "GGR Covepi Renda FII",
+    "GARE11": "GARE Recebíveis Imobiliários FII",
     "VGIA11": "Valora RE III FII",
     "MXRF11": "Maxi Renda FII",
     "HGLG11": "CSHG Logística FII",
@@ -97,17 +97,25 @@ TICKERS_B3 = {
     "HFOF11": "Hedge Top FOFII 3 FII",
     "RBRF11": "RBR Alpha FII",
     "PVBI11": "VBI Prime Properties FII",
+    "HSAF11": "HSI Ativos Financeiros FII",
 }
 
 def search_tickers(searchterm):
-    """Filtra TICKERS_B3 pelo codigo ou nome, ignorando maiusculas/minusculas."""
+    """Filtra TICKERS_B3 pelo codigo ou nome, com fallback dinâmico para novos ativos."""
     if not searchterm:
         return []
     termo = searchterm.strip().upper()
     resultados = []
+    
+    # Adiciona a opção de usar o texto digitado se ele tiver tamanho de ticker (>= 4 caracteres)
+    if len(termo) >= 4:
+        resultados.append((f"➕ Usar ativo digitado: {termo}", termo))
+        
     for tk, nome in TICKERS_B3.items():
         if termo in tk or termo in nome.upper():
-            resultados.append((f"{tk} — {nome}", tk))
+            if tk != termo:
+                resultados.append((f"{tk} — {nome}", tk))
+                
     resultados.sort(key=lambda x: (not x[1].startswith(termo), x[1]))
     return resultados[:15]
 
@@ -115,7 +123,6 @@ def search_tickers(searchterm):
 # --- 1. BANCO DE DADOS (CSV) ---
 # ==========================================
 ARQUIVO_BANCO = "minha_carteira.csv"
-
 CARTEIRAS_FORA_DO_PATRIMONIO = {"WATCHLIST"}
 
 def carregar_dados():
@@ -144,7 +151,6 @@ def eh_patrimonio_real(ativo):
 # ==========================================
 # --- 2. FUNÇÕES DE DADOS (YFINANCE) ---
 # ==========================================
-
 @st.cache_data(ttl=60)
 def buscar_cotacao_simples(ticker):
     ticker_sa = ticker if ticker.endswith(('.SA', '-BRL', '=X', '^')) else f"{ticker}.SA"
@@ -188,7 +194,6 @@ def buscar_indices_topo():
         ibov = yf.Ticker("^BVSP").history(period="2d")
         dolar = yf.Ticker("BRL=X").history(period="2d")
         btc = yf.Ticker("BTC-BRL").history(period="2d")
-
         dados = {}
         for nome, hist in [("IBOV", ibov), ("USD", dolar), ("BTC", btc)]:
             if len(hist) >= 2:
@@ -203,7 +208,6 @@ def buscar_indices_topo():
 
 @st.cache_data(ttl=300)
 def buscar_destaques_mercado():
-    """Busca robusta das maiores altas e baixas"""
     tickers = ['PETR4.SA', 'VALE3.SA', 'ITUB4.SA', 'BBDC4.SA', 'B3SA3.SA', 'ABEV3.SA',
                'WEGE3.SA', 'RENT3.SA', 'SUZB3.SA', 'ELET3.SA', 'RADL3.SA', 'PRIO3.SA',
                'HAPV3.SA', 'MGLU3.SA', 'COGN3.SA', 'USIM5.SA', 'CSNA3.SA', 'GGBR4.SA',
@@ -220,7 +224,6 @@ def buscar_destaques_mercado():
                 df_close = df.xs('Close', level=1, axis=1)
         else:
             df_close = df['Close'] if 'Close' in df else df
-
         df_close = df_close.dropna(axis=1, how='all')
         
         for ticker in tickers:
