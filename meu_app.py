@@ -330,7 +330,8 @@ def buscar_historico(ticker):
 # ==========================================
 # --- 3. BARRA LATERAL ---
 # ==========================================
-carteiras_existentes = list(set([str(a.get("Carteira", "COMPRAS (Real)")) for a in st.session_state["carteira"] if a["Ticker"] != "CAIXA"]))
+# 🚀 CORREÇÃO CRÍTICA AQUI: Puxa todas as carteiras sem filtrar pelo Ticker "CAIXA", permitindo pastas vazias aparecerem!
+carteiras_existentes = list(set([str(a.get("Carteira", "COMPRAS (Real)")) for a in st.session_state["carteira"]]))
 if "COMPRAS (Real)" not in carteiras_existentes: carteiras_existentes.insert(0, "COMPRAS (Real)")
 if "WATCHLIST" not in carteiras_existentes: carteiras_existentes.append("WATCHLIST")
 
@@ -419,7 +420,6 @@ with st.sidebar:
 # ==========================================
 # --- VALIDAÇÃO DA PASTA/CARTEIRA SELECIONADA ---
 # ==========================================
-# 🚀 Mantém a carteira ativa sincronizada de forma global pelo st.session_state
 if "carteira_ativa" not in st.session_state or st.session_state["carteira_ativa"] not in carteiras_existentes:
     st.session_state["carteira_ativa"] = carteiras_existentes[0]
 
@@ -452,7 +452,6 @@ if indices:
     if "BTC" in indices:
         cartoes.append(("Bitcoin", f"{indices['BTC']['preco']:,.0f}", indices['BTC']['var'], indices['BTC']['pct'], "R$ ", False))
 
-# 🚀 FILTRAGEM DINÂMICA: Puxa apenas os ativos da carteira ativada na tela
 ativos_da_carteira_ativa = [
     a for a in st.session_state["carteira"] 
     if str(a.get("Carteira")).upper() == carteira_ativa.upper() and a["Ticker"] != "CAIXA"
@@ -471,7 +470,6 @@ for ticker in tickers_filtrados:
 # ==========================================
 col_esq, col_dir = st.columns([1.2, 1.0], gap="large")
 
-# --- COLUNA DA ESQUERDA (Mini-Cards Filtrados e Panorama) ---
 with col_esq:
     st.markdown("### 📊 Meu Portfólio & Acompanhamento", unsafe_allow_html=True)
     
@@ -526,9 +524,7 @@ with col_esq:
             fig_bar.update_layout(margin=dict(t=0, b=0, l=0, r=0), paper_bgcolor='rgba(0,0,0,0)', font_color="white")
             c_bar.plotly_chart(fig_bar, use_container_width=True)
 
-# --- COLUNA DA DIREITA (Seletor Global de Pastas e Dados) ---
 with col_dir:
-    # 🚀 O PULO DO GATO: Trocamos o `st.tabs` por um selectbox de controle em tempo real
     st.selectbox(
         "📂 Escolha a Carteira para Exibir no Painel:", 
         carteiras_existentes, 
@@ -543,6 +539,7 @@ with col_dir:
     
     if not dados_aba:
         st.info("Esta pasta está vazia de ativos.")
+        df_agrupado = pd.DataFrame()
     else:
         df_ledger = pd.DataFrame(dados_aba)
         
@@ -598,35 +595,30 @@ with col_dir:
                     c3.metric("Rentabilidade Geral", f"{(((tot_atu - tot_inv) / tot_inv) * 100 if tot_inv > 0 else 0):.2f}%")
 
         st.markdown("### Evolução do Ativo")
-        ativo_graf_aba = st.selectbox("Selecione o ativo:", df_agrupado['Ticker'].tolist(), key=f"sel_{carteira_ativa}")
-        df_hist = buscar_historico(ativo_graf_aba)
-        
-        if not df_hist.empty:
-            fig_linha = px.line(df_hist, x='Data', y='Preço')
-            if not is_tracking_aba:
-                pm_ativo = df_agrupado[df_agrupado['Ticker'] == ativo_graf_aba]['Preço Médio'].values[0]
-                fig_linha.add_hline(y=pm_ativo, line_dash="dash", line_color="#ff4b4b", annotation_text=f"PM: R$ {pm_ativo:.2f}")
+        if not df_agrupado.empty:
+            ativo_graf_aba = st.selectbox("Selecione o ativo:", df_agrupado['Ticker'].tolist(), key=f"sel_{carteira_ativa}")
+            df_hist = buscar_historico(ativo_graf_aba)
+            
+            if not df_hist.empty:
+                fig_linha = px.line(df_hist, x='Data', y='Preço')
+                if not is_tracking_aba:
+                    pm_ativo = df_agrupado[df_agrupado['Ticker'] == ativo_graf_aba]['Preço Médio'].values[0]
+                    fig_linha.add_hline(y=pm_ativo, line_dash="dash", line_color="#ff4b4b", annotation_text=f"PM: R$ {pm_ativo:.2f}")
 
-                compras_ativo = df_ledger[df_ledger['Ticker'] == ativo_graf_aba]
-                for _, compra in compras_ativo.iterrows():
-                    try:
-                        dt_plotly = datetime.strptime(compra['Data da Compra'], "%d/%m/%Y").strftime("%Y-%m-%d")
-                        qtd = compra['Quantidade']
-                        p_pago = compra['Preço Pago']
-                        if qtd > 0:
-                            fig_linha.add_vline(
-                                x=dt_plotly, 
-                                line_dash="dot", 
-                                line_color="#378ADD", 
-                                annotation_text=f" {int(qtd)} un @ R$ {p_pago:.2f}", 
-                                annotation_position="top right"
-                            )
-                    except Exception:
-                        pass
+                    compras_ativo = df_ledger[df_ledger['Ticker'] == ativo_graf_aba]
+                    for _, compra in compras_ativo.iterrows():
+                        try:
+                            dt_plotly = datetime.strptime(compra['Data da Compra'], "%d/%m/%Y").strftime("%Y-%m-%d")
+                            qtd = compra['Quantidade']
+                            p_pago = compra['Preço Pago']
+                            if qtd > 0:
+                                fig_linha.add_vline(x=dt_plotly, line_dash="dot", line_color="#378ADD", annotation_text=f" {int(qtd)} un @ R$ {p_pago:.2f}", annotation_position="top right")
+                        except Exception:
+                            pass
 
-            fig_linha.update_layout(margin=dict(t=10, b=10, l=10, r=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white", height=250)
-            fig_linha.update_traces(line_color="#00c698")
-            st.plotly_chart(fig_linha, use_container_width=True)
+                fig_linha.update_layout(margin=dict(t=10, b=10, l=10, r=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white", height=250)
+                fig_linha.update_traces(line_color="#00c698")
+                st.plotly_chart(fig_linha, use_container_width=True)
 
     # --- PAINEL: MAIORES ALTAS E BAIXAS ---
     st.markdown("<br>", unsafe_allow_html=True)
