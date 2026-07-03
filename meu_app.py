@@ -209,7 +209,7 @@ def buscar_indices_topo():
                 ant = hist['Close'].iloc[-2]
                 var = atual - ant
                 pct = (var / ant) * 100
-                dados[nome] = {"preco": atual, "var": var, "pct": pct}
+                dados[nome] = {"preco": current_val := atual, "var": var, "pct": pct}
         return dados
     except Exception:
         return None
@@ -362,24 +362,23 @@ codigo_letreiro = f"""
 components.html(codigo_letreiro, height=75)
 
 # ==========================================
-# --- 4. TOPO: CARTÕES FIXOS (CORRIGIDOS) ---
+# --- 4. TOPO: CARTÕES ULTRA COMPACTOS (CORRIGIDOS) ---
 # ==========================================
 st.title("📈 Meu Portfólio & Acompanhamento")
 
 indices = buscar_indices_topo()
 
-# 🚀 CORREÇÃO AQUI: String limpa e sem recuos/tabs estruturais para evitar falso Markdown Codeblock
+# 🚀 CORREÇÃO E ENXUGAMENTO AQUI: Layout 100% compacto para caber dezenas de ativos
 def criar_cartao_html(titulo, valor, variacao, pct, prefixo="", watchlist=False):
     cor = "#00e676" if variacao >= 0 else "#ff4b4b"
     sinal = "+" if variacao >= 0 else ""
-    borda = "2px solid #378ADD" if watchlist else "1px solid #2B3040"
-    selo = '<div style="color:#378ADD; font-size:11px; margin-bottom:4px;">👁️ WATCHLIST</div>' if watchlist else ''
+    borda = "1.5px solid #378ADD" if watchlist else "1px solid #2B3040"
+    nome_exibicao = f"👁️ {titulo}" if watchlist else titulo
     return (
-        f'<div style="background-color: #161A25; padding: 15px; border-radius: 8px; border: {borda}; text-align: center; margin-bottom: 15px;">'
-        f'{selo}'
-        f'<div style="color: #A0AEC0; font-size: 14px; font-weight: bold; margin-bottom: 5px;">{titulo}</div>'
-        f'<div style="font-size: 22px; font-weight: bold; color: white;">{prefixo}{valor}</div>'
-        f'<div style="color: {cor}; font-size: 14px; margin-top: 5px;">{sinal}{variacao:.2f} ({sinal}{pct:.2f}%)</div>'
+        f'<div style="background-color: #161A25; padding: 6px 4px; border-radius: 6px; border: {borda}; text-align: center; margin-bottom: 6px;">'
+        f'<div style="color: #A0AEC0; font-size: 11px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{nome_exibicao}</div>'
+        f'<div style="font-size: 14px; font-weight: bold; color: white; margin: 2px 0;">{prefixo}{valor}</div>'
+        f'<div style="color: {cor}; font-size: 10px; font-weight: 500;">{sinal}{pct:.2f}%</div>'
         f'</div>'
     )
 
@@ -387,7 +386,7 @@ cartoes = []
 if indices:
     cartoes.append(("Ibovespa", f"{indices['IBOV']['preco']:,.0f}", indices['IBOV']['var'], indices['IBOV']['pct'], "", False))
     cartoes.append(("Dólar", f"{indices['USD']['preco']:.4f}", indices['USD']['var'], indices['USD']['pct'], "R$ ", False))
-    cartoes.append(("Bitcoin (BRL)", f"{indices['BTC']['preco']:,.0f}", indices['BTC']['var'], indices['BTC']['pct'], "R$ ", False))
+    cartoes.append(("Bitcoin", f"{indices['BTC']['preco']:,.0f}", indices['BTC']['var'], indices['BTC']['pct'], "R$ ", False))
 
 ativos_com_carteira = {}
 for a in st.session_state["carteira"]:
@@ -403,10 +402,12 @@ for ticker in ativos_ativos:
         is_watch = ativos_com_carteira[ticker].upper() in CARTEIRAS_FORA_DO_PATRIMONIO
         cartoes.append((ticker, f"{info['preco']:.2f}", info['var'], info['pct'], "R$ ", is_watch))
 
+# 🚀 DISTRIBUIÇÃO EM GRANDE ESCALA: Agora agrupa em linhas de 8 colunas para caber tudo compacto
+COLUNAS_POR_LINHA = 8
 if cartoes:
-    for i in range(0, len(cartoes), 5):
-        cols_topo = st.columns(5)
-        for j in range(5):
+    for i in range(0, len(cartoes), COLUNAS_POR_LINHA):
+        cols_topo = st.columns(COLUNAS_POR_LINHA)
+        for j in range(COLUNAS_POR_LINHA):
             if i + j < len(cartoes):
                 titulo, valor, var, pct, prefixo, is_watch = cartoes[i+j]
                 with cols_topo[j]:
@@ -528,7 +529,7 @@ with col_dir:
                     fig_linha.update_traces(line_color="#00c698")
                     st.plotly_chart(fig_linha, use_container_width=True)
 
-    # --- NOVO PAINEL: MAIORES ALTAS E BAIXAS ---
+    # --- PAINEL: MAIORES ALTAS E BAIXAS ---
     st.markdown("<br>", unsafe_allow_html=True)
     altas, baixas, _ = buscar_destaques_mercado()
     html_painel = """<style>.market-panel { background-color: #161A25; border: 1px solid #2B3040; border-radius: 8px; padding: 20px; display: flex; gap: 20px; margin-top: 10px; } .market-col { flex: 1; } .market-col:first-child { border-right: 1px solid #2B3040; padding-right: 20px; } .market-title { font-size: 16px; font-weight: bold; margin-bottom: 15px; } .title-up { color: #00e676; } .title-down { color: #ff4b4b; } .market-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 15px; } .m-ticker { color: #2196F3; font-weight: bold; } .m-var-up { color: #00e676; font-weight: bold; } .m-var-down { color: #ff4b4b; font-weight: bold; } .btn-mais { display: block; text-align: center; background-color: #0066cc; color: white !important; padding: 12px; border-radius: 30px; text-decoration: none; font-weight: bold; margin-top: 20px; }</style><div class="market-panel"><div class="market-col"><div class="market-title title-up">⬆️ Maiores altas</div>"""
