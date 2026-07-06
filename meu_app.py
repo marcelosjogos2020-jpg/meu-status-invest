@@ -11,7 +11,7 @@ from streamlit_searchbox import st_searchbox
 # Configuração para usar o ecrã inteiro
 st.set_page_config(page_title="Meu Portfólio", page_icon="📈", layout="wide")
 
-# 🚀 RESET TOTAL DE CSS: Cola tudo no topo e estiliza o seletor horizontal como abas
+# RESET TOTAL DE CSS: Cola tudo no topo e gerencia o estilo dos mini-cards
 st.markdown("""
     <style>
         /* Esconde o cabeçalho nativo do Streamlit */
@@ -38,6 +38,32 @@ st.markdown("""
         
         iframe {
             margin-top: 0px !important;
+        }
+
+        /* Customização para fazer o st.radio horizontal parecer abas elegantes */
+        div[data-testid="stRadio"] > label {
+            display: none !important;
+        }
+        div[data-testid="stRadio"] div[role="radiogroup"] {
+            flex-direction: row !important;
+            gap: 15px !important;
+            border-bottom: 1px solid #2B3040;
+            padding-bottom: 5px;
+            margin-bottom: 10px;
+        }
+        div[data-testid="stRadio"] div[role="radiogroup"] label {
+            background: transparent !important;
+            border: none !important;
+            padding: 4px 0px !important;
+            color: #a0aec0 !important;
+            font-weight: bold !important;
+            font-size: 13px !important;
+            cursor: pointer;
+        }
+        div[data-testid="stRadio"] div[role="radiogroup"] label[data-checked="true"] {
+            color: #ff4b4b !important;
+            border-bottom: 2px solid #ff4b4b !important;
+            border-radius: 0px !important;
         }
 
         /* Estilo dos Mini-Cards Super Compactos do Topo */
@@ -73,32 +99,6 @@ st.markdown("""
         }
         .var-positiva { color: #00e676; }
         .var-negativa { color: #ff4b4b; }
-
-        /* Customização para fazer o st.radio horizontal parecer abas elegantes */
-        div[data-testid="stRadio"] > label {
-            display: none !important;
-        }
-        div[data-testid="stRadio"] div[role="radiogroup"] {
-            flex-direction: row !important;
-            gap: 15px !important;
-            border-bottom: 1px solid #2B3040;
-            padding-bottom: 5px;
-            margin-bottom: 10px;
-        }
-        div[data-testid="stRadio"] div[role="radiogroup"] label {
-            background: transparent !important;
-            border: none !important;
-            padding: 4px 0px !important;
-            color: #a0aec0 !important;
-            font-weight: bold !important;
-            font-size: 13px !important;
-            cursor: pointer;
-        }
-        div[data-testid="stRadio"] div[role="radiogroup"] label[data-checked="true"] {
-            color: #ff4b4b !important; /* Cor vermelha de destaque igual ao seu print */
-            border-bottom: 2px solid #ff4b4b !important;
-            border-radius: 0px !important;
-        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -442,17 +442,40 @@ with st.sidebar:
             st.success("Pasta renomeada com sucesso!")
             st.rerun()
 
+    # 🚀 NOVO: Sistema de segurança de Backup de dados locais
+    st.divider()
+    st.header("💾 Backup dos Dados")
+    if len(st.session_state["carteira"]) > 0:
+        df_download = pd.DataFrame(st.session_state["carteira"])
+        csv_data = df_download.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Baixar Backup (CSV)",
+            data=csv_data,
+            file_name="meu_portfolio_backup.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+    arquivo_upload = st.file_uploader("Restaurar dados caso sumam:", type=["csv"])
+    if arquivo_upload is not None:
+        try:
+            df_uploaded = pd.read_csv(arquivo_upload)
+            st.session_state["carteira"] = df_uploaded.to_dict(orient="records")
+            salvar_dados(st.session_state["carteira"])
+            st.success("Dados restaurados!")
+            st.rerun()
+        except Exception:
+            st.error("Arquivo de backup inválido.")
+
 # ==========================================
 # --- SESSÃO GLOBAL DA CARTEIRA ATIVA ---
 # ==========================================
 if "carteira_ativa_radio" not in st.session_state:
     st.session_state["carteira_ativa_radio"] = carteiras_existentes[0]
 
-# Puxa o valor reativo da carteira ativa
 carteira_ativa = st.session_state["carteira_ativa_radio"]
 
 # ==========================================
-# --- PREPARAÇÃO DOS DADOS DO TOPO (FILTRADOS DINAMICAMENTE) ---
+# --- PREPARAÇÃO DOS DADOS DO TOPO ---
 # ==========================================
 indices = buscar_indices_topo()
 
@@ -478,10 +501,9 @@ if indices:
     if "BTC" in indices:
         cartoes.append(("Bitcoin", f"{indices['BTC']['preco']:,.0f}", indices['BTC']['var'], indices['BTC']['pct'], "R$ ", False))
 
-# 🚀 DINAMISMO DO TOPO: Filtra os mini-cards do topo baseando-se EXATAMENTE na aba selecionada na direita
 ativos_da_carteira_ativa = [
     a for a in st.session_state["carteira"] 
-    if str(a.get("Carteira", "COMPRAS (Real)")).upper() == carteira_ativa.upper() and a["Ticker"] != "CAIXA"
+    if str(a.get("Carteira", "COMPRAS (Real)")).upper() == carteira_ativa.upper() and str(a.get("Ticker")).upper() != "CAIXA"
 ]
 tickers_filtrados = list(set([a["Ticker"] for a in ativos_da_carteira_ativa]))
 precos_lote = buscar_cotacoes_lote(tickers_filtrados)
@@ -492,12 +514,22 @@ for ticker in tickers_filtrados:
         is_watch = carteira_ativa.upper() in CARTEIRAS_TRACKING
         cartoes.append((ticker, f"{info['preco']:.2f}", info['var'], info['pct'], "R$ ", is_watch))
 
+# 🚀 SEGURANÇA ADICIONAL DO LETREIRO TAPE: Evita que itens corrompidos quebrem a formatação JSON do widget da TradingView
+simbolos_letreiro = [
+    {"proName": "BMFBOVESPA:IBOV", "title": "Ibovespa"},
+    {"proName": "FX_IDC:USDBRL", "title": "Dólar"},
+    {"proName": "BINANCE:BTCBRL", "title": "Bitcoin"}
+]
+if len(st.session_state["carteira"]) > 0:
+    ativos_unicos = list(set([str(a["Ticker"]).upper().strip() for a in st.session_state["carteira"] if pd.notna(a.get("Ticker")) and str(a["Ticker"]).upper() != "CAIXA" and str(a["Ticker"]).strip() != ""]))
+    for ativo in ativos_unicos[:10]:
+        simbolos_letreiro.append({"proName": f"BMFBOVESPA:{ativo}", "title": ativo})
+
 # ==========================================
-# --- 5. ESTRUTURA PRINCIPAL NIVELADA ---
+# --- 5. ESTRUTURA PRINCIPAL ---
 # ==========================================
 col_esq, col_dir = st.columns([1.2, 1.0], gap="large")
 
-# --- COLUNA DA ESQUERDA (Título, Mini-Cards Dinâmicos, Panorama, Gráficos) ---
 with col_esq:
     st.markdown("### 📊 Meu Portfólio & Acompanhamento", unsafe_allow_html=True)
     
@@ -552,10 +584,7 @@ with col_esq:
             fig_bar.update_layout(margin=dict(t=0, b=0, l=0, r=0), paper_bgcolor='rgba(0,0,0,0)', font_color="white")
             c_bar.plotly_chart(fig_bar, use_container_width=True)
 
-# --- COLUNA DA DIREITA (Abas em formato de Botões de Rádio Reativos) ---
 with col_dir:
-    # 🚀 O SEGREDO DO DINAMISMO: Trocamos st.tabs por st.radio horizontal (estilizado via CSS no topo do código).
-    # Agora ele tem a cara e o comportamento de abas, mas é 100% reativo com o topo!
     st.radio(
         "Abas",
         carteiras_existentes,
@@ -567,7 +596,7 @@ with col_dir:
     is_tracking_aba = carteira_ativa.upper() in CARTEIRAS_TRACKING
     dados_aba = [
         a for a in st.session_state["carteira"] 
-        if str(a.get("Carteira", "COMPRAS (Real)")).upper() == carteira_ativa.upper() and a["Ticker"] != "CAIXA"
+        if str(a.get("Carteira", "COMPRAS (Real)")).upper() == carteira_ativa.upper() and str(a.get("Ticker")) != "CAIXA"
     ]
     
     if not dados_aba:
