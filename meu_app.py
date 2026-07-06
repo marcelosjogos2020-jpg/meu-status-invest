@@ -11,7 +11,7 @@ from streamlit_searchbox import st_searchbox
 # Configuração para usar o ecrã inteiro
 st.set_page_config(page_title="Meu Portfólio", page_icon="📈", layout="wide")
 
-# RESET TOTAL DE CSS: Cola tudo no topo e gerencia o estilo dos mini-cards
+# 🚀 RESET DE CSS AJUSTADO: Adicionado um pequeno respiro no topo (10px) para o letreiro não ser cortado
 st.markdown("""
     <style>
         /* Esconde o cabeçalho nativo do Streamlit */
@@ -21,12 +21,12 @@ st.markdown("""
             opacity: 0 !important;
         }
         
-        /* Zera o padding superior de todos os containers de layout */
+        /* Ajustado de 0px para 10px para dar o espaço perfeito para o letreiro aparecer inteiro */
         .main .block-container, 
         [data-testid="stAppViewBlockContainer"],
         [data-testid="stMainBlockContainer"],
         [data-testid="stVerticalBlockRoot"] {
-            padding-top: 0px !important;
+            padding-top: 10px !important;
             margin-top: 0px !important;
         }
 
@@ -442,7 +442,6 @@ with st.sidebar:
             st.success("Pasta renomeada com sucesso!")
             st.rerun()
 
-    # 🚀 NOVO: Sistema de segurança de Backup de dados locais
     st.divider()
     st.header("💾 Backup dos Dados")
     if len(st.session_state["carteira"]) > 0:
@@ -475,7 +474,7 @@ if "carteira_ativa_radio" not in st.session_state:
 carteira_ativa = st.session_state["carteira_ativa_radio"]
 
 # ==========================================
-# --- PREPARAÇÃO DOS DADOS DO TOPO ---
+# --- PREPARAÇÃO DOS DADOS DO TOPO (FILTRADOS) ---
 # ==========================================
 indices = buscar_indices_topo()
 
@@ -503,7 +502,7 @@ if indices:
 
 ativos_da_carteira_ativa = [
     a for a in st.session_state["carteira"] 
-    if str(a.get("Carteira", "COMPRAS (Real)")).upper() == carteira_ativa.upper() and str(a.get("Ticker")).upper() != "CAIXA"
+    if str(a.get("Carteira", "COMPRAS (Real)")).upper() == carteira_ativa.upper() and str(a.get("Ticker")) != "CAIXA"
 ]
 tickers_filtrados = list(set([a["Ticker"] for a in ativos_da_carteira_ativa]))
 precos_lote = buscar_cotacoes_lote(tickers_filtrados)
@@ -514,7 +513,7 @@ for ticker in tickers_filtrados:
         is_watch = carteira_ativa.upper() in CARTEIRAS_TRACKING
         cartoes.append((ticker, f"{info['preco']:.2f}", info['var'], info['pct'], "R$ ", is_watch))
 
-# 🚀 SEGURANÇA ADICIONAL DO LETREIRO TAPE: Evita que itens corrompidos quebrem a formatação JSON do widget da TradingView
+# Letreiro tape dinâmico e seguro
 simbolos_letreiro = [
     {"proName": "BMFBOVESPA:IBOV", "title": "Ibovespa"},
     {"proName": "FX_IDC:USDBRL", "title": "Dólar"},
@@ -585,18 +584,12 @@ with col_esq:
             c_bar.plotly_chart(fig_bar, use_container_width=True)
 
 with col_dir:
-    st.radio(
-        "Abas",
-        carteiras_existentes,
-        horizontal=True,
-        label_visibility="collapsed",
-        key="carteira_ativa_radio"
-    )
+    st.radio("Seletor de Carteiras", carteiras_existentes, key="carteira_ativa")
     
     is_tracking_aba = carteira_ativa.upper() in CARTEIRAS_TRACKING
     dados_aba = [
         a for a in st.session_state["carteira"] 
-        if str(a.get("Carteira", "COMPRAS (Real)")).upper() == carteira_ativa.upper() and str(a.get("Ticker")) != "CAIXA"
+        if str(a.get("Carteira", "COMPRAS (Real)")).upper() == carteira_ativa.upper() and a["Ticker"] != "CAIXA"
     ]
     
     if not dados_aba:
