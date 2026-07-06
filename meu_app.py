@@ -11,7 +11,7 @@ from streamlit_searchbox import st_searchbox
 # Configuração para usar o ecrã inteiro
 st.set_page_config(page_title="Meu Portfólio", page_icon="📈", layout="wide")
 
-# RESET TOTAL DE CSS: Cola tudo no topo e gerencia o estilo dos mini-cards
+# RESET TOTAL DE CSS: Cola tudo no topo e gerencia o estilo das abas horizontais e mini-cards
 st.markdown("""
     <style>
         /* Esconde o cabeçalho nativo do Streamlit */
@@ -21,12 +21,12 @@ st.markdown("""
             opacity: 0 !important;
         }
         
-        /* Zera o padding superior de todos os containers de layout */
+        /* Dá o espaço perfeito (10px) para o letreiro aparecer inteiro no teto */
         .main .block-container, 
         [data-testid="stAppViewBlockContainer"],
         [data-testid="stMainBlockContainer"],
         [data-testid="stVerticalBlockRoot"] {
-            padding-top: 0px !important;
+            padding-top: 10px !important;
             margin-top: 0px !important;
         }
 
@@ -219,8 +219,6 @@ def carregar_dados():
             df["Data da Compra"] = "Antes da Atualização"
         if "Carteira" not in df.columns:
             df["Carteira"] = "COMPRAS (Real)"
-        if "Tipo_Carteira" not in df.columns:
-            df["Tipo_Carteira"] = df["Carteira"].apply(lambda x: "TRACKING" if str(x).upper() == "WATCHLIST" else "REAL")
         return df.to_dict(orient="records")
     return []
 
@@ -231,13 +229,6 @@ def salvar_dados(dados):
 
 if "carteira" not in st.session_state:
     st.session_state["carteira"] = carregar_dados()
-
-# Mapeamento dinâmico de tipos de carteiras
-CARTEIRAS_TRACKING = {str(a["Carteira"]).upper() for a in st.session_state["carteira"] if a.get("Tipo_Carteira") == "TRACKING"}
-CARTEIRAS_TRACKING.add("WATCHLIST")
-
-def eh_patrimonio_real(ativo):
-    return str(ativo.get("Carteira", "COMPRAS (Real)")).upper() not in CARTEIRAS_TRACKING
 
 # ==========================================
 # --- 2. FUNÇÕES DE DADOS (YFINANCE) ---
@@ -380,10 +371,11 @@ with st.sidebar:
             st.warning("Não consegui buscar a cotação agora.")
 
     carteira_selecionada = st.selectbox("Carteira Destino", carteiras_existentes)
-    is_carteira_tracking = carteira_selecionada.upper() in CARTEIRAS_TRACKING
+    
+    # 🚀 NOVO: Opção explícita se o ativo é uma compra real ou apenas acompanhamento
+    tipo_adicao = st.radio("Tipo de Registro:", ["💰 Compra Real", "👁️ Só Acompanhar Cotação"], horizontal=True)
 
-    if is_carteira_tracking:
-        st.caption("👁️ Esta carteira é de acompanhamento. Não precisa informar quantidade nem preço.")
+    if tipo_adicao == "👁️ Só Acompanhar Cotação":
         qtd_input = 0
         preco_medio_input = 0.0
         data_compra_input = st.date_input("Data de Adição", value=datetime.today())
@@ -398,11 +390,10 @@ with st.sidebar:
     col_btn1, col_btn2 = st.columns(2)
     if col_btn1.button("Adicionar Ativo"):
         data_str = data_compra_input.strftime("%d/%m/%Y")
-        tipo_salvar = "TRACKING" if is_carteira_tracking else "REAL"
         st.session_state["carteira"].append({
             "Ticker": ticker_input, "Quantidade": qtd_input,
             "Preço Pago": preco_medio_input, "Data da Compra": data_str,
-            "Carteira": carteira_selecionada, "Tipo_Carteira": tipo_salvar
+            "Carteira": carteira_selecionada
         })
         st.session_state["carteira"] = salvar_dados(st.session_state["carteira"])
         st.success("Salvo!")
@@ -416,14 +407,12 @@ with st.sidebar:
     st.divider()
     st.header("📂 Nova Carteira")
     nova_carteira_input = st.text_input("Nome da Nova Carteira").upper().strip()
-    tipo_nova_carteira = st.radio("Objetivo da Pasta:", ["💰 Investimento Real", "👁️ Acompanhamento (Watchlist)"], horizontal=True)
     if st.button("Criar Carteira", use_container_width=True):
         if nova_carteira_input and nova_carteira_input not in carteiras_existentes:
-            tipo_salvar = "TRACKING" if "Acompanhamento" in tipo_nova_carteira else "REAL"
             st.session_state["carteira"].append({
                 "Ticker": "CAIXA", "Quantidade": 0, "Preço Pago": 0,
                 "Data da Compra": datetime.today().strftime("%d/%m/%Y"), 
-                "Carteira": nova_carteira_input, "Tipo_Carteira": tipo_salvar
+                "Carteira": nova_carteira_input
             })
             st.session_state["carteira"] = salvar_dados(st.session_state["carteira"])
             st.success(f"Pasta {nova_carteira_input} criada!")
@@ -442,7 +431,6 @@ with st.sidebar:
             st.success("Pasta renomeada com sucesso!")
             st.rerun()
 
-    # 🚀 NOVO: Sistema de segurança de Backup de dados locais
     st.divider()
     st.header("💾 Backup dos Dados")
     if len(st.session_state["carteira"]) > 0:
@@ -475,7 +463,25 @@ if "carteira_ativa_radio" not in st.session_state:
 carteira_ativa = st.session_state["carteira_ativa_radio"]
 
 # ==========================================
-# --- PREPARAÇÃO DOS DADOS DO TOPO ---
+# --- DETECÇÃO AUTOMÁTICA DO TIPO DE CARTEIRA (INTELIGENTE E SEGURO) ---
+# ==========================================
+dados_aba = [
+    a for a in st.session_state["carteira"] 
+    if str(a.get("Carteira", "COMPRAS (Real)")).upper() == carteira_ativa.upper() and str(a.get("Ticker")) != "CAIXA"
+]
+
+# 🚀 SEGURO: Se houver qualquer ativo com Quantidade > 0 na pasta, ela vira AUTOMATICAMENTE "Real/Investimento".
+ativos_com_quantidade = [a for a in dados_aba if float(a.get("Quantidade", 0)) > 0]
+is_tracking_aba = (carteira_ativa.upper() == "WATCHLIST") or (len(ativos_com_quantidade) == 0)
+
+def eh_patrimonio_real(ativo):
+    nome_cart = str(ativo.get("Carteira", "COMPRAS (Real)")).upper()
+    ativos_da_pasta = [a for a in st.session_state["carteira"] if str(a.get("Carteira")).upper() == nome_cart and a["Ticker"] != "CAIXA"]
+    tem_quantidade = [a for a in ativos_da_pasta if float(a.get("Quantidade", 0)) > 0]
+    return nome_cart != "WATCHLIST" and len(tem_quantidade) > 0
+
+# ==========================================
+# --- PREPARAÇÃO DOS DADOS DO TOPO (FILTRADOS) ---
 # ==========================================
 indices = buscar_indices_topo()
 
@@ -501,20 +507,15 @@ if indices:
     if "BTC" in indices:
         cartoes.append(("Bitcoin", f"{indices['BTC']['preco']:,.0f}", indices['BTC']['var'], indices['BTC']['pct'], "R$ ", False))
 
-ativos_da_carteira_ativa = [
-    a for a in st.session_state["carteira"] 
-    if str(a.get("Carteira", "COMPRAS (Real)")).upper() == carteira_ativa.upper() and str(a.get("Ticker")).upper() != "CAIXA"
-]
-tickers_filtrados = list(set([a["Ticker"] for a in ativos_da_carteira_ativa]))
+tickers_filtrados = list(set([a["Ticker"] for a in dados_aba]))
 precos_lote = buscar_cotacoes_lote(tickers_filtrados)
 
 for ticker in tickers_filtrados:
     info = precos_lote.get(ticker)
     if info and info["preco"]:
-        is_watch = carteira_ativa.upper() in CARTEIRAS_TRACKING
-        cartoes.append((ticker, f"{info['preco']:.2f}", info['var'], info['pct'], "R$ ", is_watch))
+        cartoes.append((ticker, f"{info['preco']:.2f}", info['var'], info['pct'], "R$ ", is_tracking_aba))
 
-# 🚀 SEGURANÇA ADICIONAL DO LETREIRO TAPE: Evita que itens corrompidos quebrem a formatação JSON do widget da TradingView
+# Letreiro tape dinâmico e seguro
 simbolos_letreiro = [
     {"proName": "BMFBOVESPA:IBOV", "title": "Ibovespa"},
     {"proName": "FX_IDC:USDBRL", "title": "Dólar"},
@@ -585,33 +586,19 @@ with col_esq:
             c_bar.plotly_chart(fig_bar, use_container_width=True)
 
 with col_dir:
-    st.radio(
-        "Abas",
-        carteiras_existentes,
-        horizontal=True,
-        label_visibility="collapsed",
-        key="carteira_ativa_radio"
-    )
-    
-    is_tracking_aba = carteira_ativa.upper() in CARTEIRAS_TRACKING
-    dados_aba = [
-        a for a in st.session_state["carteira"] 
-        if str(a.get("Carteira", "COMPRAS (Real)")).upper() == carteira_ativa.upper() and str(a.get("Ticker")) != "CAIXA"
-    ]
+    st.radio("Seletor de Carteiras", carteiras_existentes, key="carteira_ativa_radio")
     
     if not dados_aba:
         st.info("Esta pasta está vazia de ativos.")
         df_agrupado = pd.DataFrame()
     else:
-        df_ledger = pd.DataFrame(dados_aba)
-        
         if is_tracking_aba:
-            df_agrupado = df_ledger.groupby('Ticker').agg({'Data da Compra': 'last'}).reset_index()
-            precos_aba = buscar_cotacoes_lote(df_agrupado['Ticker'].tolist())
+            # 📊 VISUALIZAÇÃO DE ACOMPANHAMENTO
+            df_agrupado = pd.DataFrame(dados_aba).groupby('Ticker').agg({'Data da Compra': 'last'}).reset_index()
             tabelas = []
             for _, row in df_agrupado.iterrows():
                 tk, dt = row['Ticker'], row['Data da Compra']
-                inf_aba = precos_aba.get(tk)
+                inf_aba = precos_lote.get(tk)
                 if inf_aba and inf_aba['preco']:
                     tabelas.append({
                         "Ativo": tk, 
@@ -627,16 +614,17 @@ with col_dir:
                 )
                 st.dataframe(styled, use_container_width=True, hide_index=True)
         else:
+            # 💰 VISUALIZAÇÃO DE COMPRAS REAIS
+            df_ledger = pd.DataFrame(dados_aba)
             df_ledger["Custo"] = df_ledger["Quantidade"] * df_ledger["Preço Pago"]
             df_agrupado = df_ledger.groupby('Ticker').agg({'Quantidade': 'sum', 'Custo': 'sum', 'Data da Compra': 'last'}).reset_index()
             df_agrupado['Preço Médio'] = df_agrupado.apply(lambda r: r['Custo'] / r['Quantidade'] if r['Quantidade'] > 0 else 0, axis=1)
 
-            precos_aba = buscar_cotacoes_lote(df_agrupado['Ticker'].tolist())
             tabelas, tot_inv, tot_atu = [], 0, 0
 
             for _, row in df_agrupado.iterrows():
                 tk, qtd, pm, cst, dt = row['Ticker'], row['Quantidade'], row['Preço Médio'], row['Custo'], row['Data da Compra']
-                inf_aba = precos_aba.get(tk)
+                inf_aba = precos_lote.get(tk)
                 if inf_aba and inf_aba['preco']:
                     v_atu = qtd * inf_aba['preco']
                     lucro = v_atu - cst
@@ -649,12 +637,11 @@ with col_dir:
                 styled = df_view.style.format({"Lucro/Prejuízo": "R$ {:+.2f}", "Rent. (%)": "{:+.2f}%"}).map(lambda v: f"color: {'#00e676' if v > 0 else '#ff4b4b'}; font-weight: bold;" if isinstance(v, (int, float)) else '', subset=["Lucro/Prejuízo", "Rent. (%)"])
                 st.dataframe(styled, use_container_width=True, hide_index=True)
 
-                if carteira_ativa.upper() not in CARTEIRAS_TRACKING:
-                    st.markdown("### Resumo Global")
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("Totalmente Investido", f"R$ {tot_inv:,.2f}")
-                    c2.metric("Patrimônio Atual", f"R$ {tot_atu:,.2f}", f"R$ {tot_atu - tot_inv:,.2f}")
-                    c3.metric("Rentabilidade Geral", f"{(((tot_atu - tot_inv) / tot_inv) * 100 if tot_inv > 0 else 0):.2f}%")
+                st.markdown("### Resumo Global")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Totalmente Investido", f"R$ {tot_inv:,.2f}")
+                c2.metric("Patrimônio Atual", f"R$ {tot_atu:,.2f}", f"R$ {tot_atu - tot_inv:,.2f}")
+                c3.metric("Rentabilidade Geral", f"{(((tot_atu - tot_inv) / tot_inv) * 100 if tot_inv > 0 else 0):.2f}%")
 
         st.markdown("### Evolução do Ativo")
         if not df_agrupado.empty:
@@ -667,7 +654,7 @@ with col_dir:
                     pm_ativo = df_agrupado[df_agrupado['Ticker'] == ativo_graf_aba]['Preço Médio'].values[0]
                     fig_linha.add_hline(y=pm_ativo, line_dash="dash", line_color="#ff4b4b", annotation_text=f"PM: R$ {pm_ativo:.2f}")
 
-                    compras_ativo = df_ledger[df_ledger['Ticker'] == ativo_graf_aba]
+                    compras_ativo = pd.DataFrame(dados_aba)[pd.DataFrame(dados_aba)['Ticker'] == ativo_graf_aba]
                     for _, compra in compras_ativo.iterrows():
                         try:
                             dt_plotly = datetime.strptime(compra['Data da Compra'], "%d/%m/%Y").strftime("%Y-%m-%d")
