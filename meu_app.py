@@ -11,7 +11,7 @@ from streamlit_searchbox import st_searchbox
 # Configuração para usar o ecrã inteiro
 st.set_page_config(page_title="Meu Portfólio", page_icon="📈", layout="wide")
 
-# RESET TOTAL DE CSS: Cola tudo no topo e gerencia o estilo dos mini-cards
+# 🚀 RESET TOTAL DE CSS: Cola tudo no topo e gerencia o estilo dos mini-cards
 st.markdown("""
     <style>
         /* Esconde o cabeçalho nativo do Streamlit */
@@ -206,7 +206,7 @@ def salvar_dados(dados):
 if "carteira" not in st.session_state:
     st.session_state["carteira"] = carregar_dados()
 
-# Mapeamento dinâmico de tipos de carteiras
+# Mapeamento dinâmico e seguro de tipos de carteiras com base nos dados salvos
 CARTEIRAS_TRACKING = {str(a["Carteira"]).upper() for a in st.session_state["carteira"] if a.get("Tipo_Carteira") == "TRACKING"}
 CARTEIRAS_TRACKING.add("WATCHLIST")
 
@@ -223,6 +223,12 @@ def buscar_cotacao_simples(ticker):
         hist = yf.Ticker(ticker_sa).history(period="1d")
         if len(hist) > 0:
             return float(hist['Close'].iloc[-1])
+    except Exception:
+        pass
+    try:
+        preco = yf.Ticker(ticker_sa).fast_info.get("last_price")
+        if preco:
+            return float(preco)
     except Exception:
         pass
     return None
@@ -354,6 +360,7 @@ with st.sidebar:
             st.warning("Não consegui buscar a cotação agora.")
 
     carteira_selecionada = st.selectbox("Carteira Destino", carteiras_existentes)
+    # 🚀 CORRIGIDO: Agora aponta corretamente para a nova lista dinâmica CARTEIRAS_TRACKING
     is_carteira_tracking = carteira_selecionada.upper() in CARTEIRAS_TRACKING
 
     if is_carteira_tracking:
@@ -417,16 +424,30 @@ with st.sidebar:
             st.rerun()
 
 # ==========================================
-# --- VALIDAÇÃO DA PASTA/CARTEIRA SELECIONADA ---
+# --- LETREIRO ROTATIVO ---
 # ==========================================
-# 🚀 Mantém a carteira ativa sincronizada de forma global pelo st.session_state
-if "carteira_ativa" not in st.session_state or st.session_state["carteira_ativa"] not in carteiras_existentes:
-    st.session_state["carteira_ativa"] = carteiras_existentes[0]
+simbolos_letreiro = [
+    {"proName": "BMFBOVESPA:IBOV", "title": "Ibovespa"},
+    {"proName": "FX_IDC:USDBRL", "title": "Dólar"},
+    {"proName": "BINANCE:BTCBRL", "title": "Bitcoin"}
+]
+if len(st.session_state["carteira"]) > 0:
+    ativos_unicos = list(set([a["Ticker"] for a in st.session_state["carteira"] if a["Ticker"] != "CAIXA"]))
+    for ativo in ativos_unicos[:10]:
+        simbolos_letreiro.append({"proName": f"BMFBOVESPA:{ativo}", "title": ativo})
 
-carteira_ativa = st.session_state["carteira_ativa"]
+codigo_letreiro = f"""
+<div class="tradingview-widget-container">
+  <div class="tradingview-widget-container__widget"></div>
+  <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
+  {{"symbols": {json.dumps(simbolos_letreiro)}, "showSymbolLogo": true, "isTransparent": true, "displayMode": "adaptive", "colorTheme": "dark", "locale": "br"}}
+  </script>
+</div>
+"""
+components.html(codigo_letreiro, height=75)
 
 # ==========================================
-# --- PREPARAÇÃO DOS DADOS DO TOPO (FILTRADOS) ---
+# --- PREPARAÇÃO DOS DADOS DO TOPO ---
 # ==========================================
 indices = buscar_indices_topo()
 
@@ -452,26 +473,26 @@ if indices:
     if "BTC" in indices:
         cartoes.append(("Bitcoin", f"{indices['BTC']['preco']:,.0f}", indices['BTC']['var'], indices['BTC']['pct'], "R$ ", False))
 
-# 🚀 FILTRAGEM DINÂMICA: Puxa apenas os ativos da carteira ativada na tela
-ativos_da_carteira_ativa = [
-    a for a in st.session_state["carteira"] 
-    if str(a.get("Carteira")).upper() == carteira_ativa.upper() and a["Ticker"] != "CAIXA"
-]
-tickers_filtrados = list(set([a["Ticker"] for a in ativos_da_carteira_ativa]))
-precos_lote = buscar_cotacoes_lote(tickers_filtrados)
+ativos_com_carteira = {}
+for a in st.session_state["carteira"]:
+    if a["Ticker"] != "CAIXA":
+        ativos_com_carteira[a["Ticker"]] = a.get("Carteira", "COMPRAS (Real)")
 
-for ticker in tickers_filtrados:
+ativos_ativos = list(ativos_com_carteira.keys())
+precos_lote = buscar_cotacoes_lote(ativos_ativos)
+
+for ticker in ativos_ativos:
     info = precos_lote.get(ticker)
     if info and info["preco"]:
-        is_watch = carteira_ativa.upper() in CARTEIRAS_TRACKING
+        # 🚀 CORRIGIDO: Uso dinâmico de CARTEIRAS_TRACKING
+        is_watch = ativos_com_carteira[ticker].upper() in CARTEIRAS_TRACKING
         cartoes.append((ticker, f"{info['preco']:.2f}", info['var'], info['pct'], "R$ ", is_watch))
 
 # ==========================================
-# --- 5. ESTRUTURA PRINCIPAL SINCRONIZADA ---
+# --- 5. ESTRUTURA PRINCIPAL ---
 # ==========================================
 col_esq, col_dir = st.columns([1.2, 1.0], gap="large")
 
-# --- COLUNA DA ESQUERDA (Mini-Cards Filtrados e Panorama) ---
 with col_esq:
     st.markdown("### 📊 Meu Portfólio & Acompanhamento", unsafe_allow_html=True)
     
@@ -526,107 +547,102 @@ with col_esq:
             fig_bar.update_layout(margin=dict(t=0, b=0, l=0, r=0), paper_bgcolor='rgba(0,0,0,0)', font_color="white")
             c_bar.plotly_chart(fig_bar, use_container_width=True)
 
-# --- COLUNA DA DIREITA (Seletor Global de Pastas e Dados) ---
 with col_dir:
-    # 🚀 O PULO DO GATO: Trocamos o `st.tabs` por um selectbox de controle em tempo real
-    st.selectbox(
-        "📂 Escolha a Carteira para Exibir no Painel:", 
-        carteiras_existentes, 
-        key="carteira_ativa"
-    )
-    
-    is_tracking_aba = carteira_ativa.upper() in CARTEIRAS_TRACKING
-    dados_aba = [
-        a for a in st.session_state["carteira"] 
-        if str(a.get("Carteira", "COMPRAS (Real)")).upper() == carteira_ativa.upper() and a["Ticker"] != "CAIXA"
-    ]
-    
-    if not dados_aba:
-        st.info("Esta pasta está vazia de ativos.")
-    else:
-        df_ledger = pd.DataFrame(dados_aba)
-        
-        if is_tracking_aba:
-            df_agrupado = df_ledger.groupby('Ticker').agg({'Data da Compra': 'last'}).reset_index()
-            precos_aba = buscar_cotacoes_lote(df_agrupado['Ticker'].tolist())
-            tabelas = []
-            for _, row in df_agrupado.iterrows():
-                tk, dt = row['Ticker'], row['Data da Compra']
-                inf_aba = precos_aba.get(tk)
-                if inf_aba and inf_aba['preco']:
-                    tabelas.append({
-                        "Ativo": tk, 
-                        "Preço Atual": f"R$ {inf_aba['preco']:.2f}", 
-                        "Variação Diária": inf_aba['pct'], 
-                        "Data de Adição": dt
-                    })
-            if tabelas:
-                df_view = pd.DataFrame(tabelas)
-                styled = df_view.style.format({"Variação Diária": "{:+.2f}%"}).map(
-                    lambda v: f"color: {'#00e676' if v > 0 else '#ff4b4b'}; font-weight: bold;" if isinstance(v, (int, float)) else '', 
-                    subset=["Variação Diária"]
-                )
-                st.dataframe(styled, use_container_width=True, hide_index=True)
-        else:
-            df_ledger["Custo"] = df_ledger["Quantidade"] * df_ledger["Preço Pago"]
-            df_agrupado = df_ledger.groupby('Ticker').agg({'Quantidade': 'sum', 'Custo': 'sum', 'Data da Compra': 'last'}).reset_index()
-            df_agrupado['Preço Médio'] = df_agrupado.apply(lambda r: r['Custo'] / r['Quantidade'] if r['Quantidade'] > 0 else 0, axis=1)
+    abas = st.tabs(carteiras_existentes)
+    for i, nome_carteira in enumerate(carteiras_existentes):
+        with abas[i]:
+            # 🚀 CORRIGIDO: Uso dinâmico de CARTEIRAS_TRACKING
+            is_tracking_aba = nome_carteira.upper() in CARTEIRAS_TRACKING
+            dados_aba = [a for a in st.session_state["carteira"] if str(a.get("Carteira", "COMPRAS (Real)")).upper() == nome_carteira.upper() and a["Ticker"] != "CAIXA"]
+            
+            if not dados_aba:
+                st.info("Carteira vazia.")
+                continue
 
-            precos_aba = buscar_cotacoes_lote(df_agrupado['Ticker'].tolist())
-            tabelas, tot_inv, tot_atu = [], 0, 0
+            df_ledger = pd.DataFrame(dados_aba)
+            
+            if is_tracking_aba:
+                df_agrupado = df_ledger.groupby('Ticker').agg({'Data da Compra': 'last'}).reset_index()
+                precos_aba = buscar_cotacoes_lote(df_agrupado['Ticker'].tolist())
+                tabelas = []
+                for _, row in df_agrupado.iterrows():
+                    tk, dt = row['Ticker'], row['Data da Compra']
+                    inf_aba = precos_aba.get(tk)
+                    if inf_aba and inf_aba['preco']:
+                        tabelas.append({
+                            "Ativo": tk, 
+                            "Preço Atual": f"R$ {inf_aba['preco']:.2f}", 
+                            "Variação Diária": inf_aba['pct'], 
+                            "Data de Adição": dt
+                        })
+                if tabelas:
+                    df_view = pd.DataFrame(tabelas)
+                    styled = df_view.style.format({"Variação Diária": "{:+.2f}%"}).map(
+                        lambda v: f"color: {'#00e676' if v > 0 else '#ff4b4b'}; font-weight: bold;" if isinstance(v, (int, float)) else '', 
+                        subset=["Variação Diária"]
+                    )
+                    st.dataframe(styled, use_container_width=True, hide_index=True)
+            else:
+                df_ledger["Custo"] = df_ledger["Quantidade"] * df_ledger["Preço Pago"]
+                df_agrupado = df_ledger.groupby('Ticker').agg({'Quantidade': 'sum', 'Custo': 'sum', 'Data da Compra': 'last'}).reset_index()
+                df_agrupado['Preço Médio'] = df_agrupado.apply(lambda r: r['Custo'] / r['Quantidade'] if r['Quantidade'] > 0 else 0, axis=1)
 
-            for _, row in df_agrupado.iterrows():
-                tk, qtd, pm, cst, dt = row['Ticker'], row['Quantidade'], row['Preço Médio'], row['Custo'], row['Data da Compra']
-                inf_aba = precos_aba.get(tk)
-                if inf_aba and inf_aba['preco']:
-                    v_atu = qtd * inf_aba['preco']
-                    lucro = v_atu - cst
-                    tot_inv += cst
-                    tot_atu += v_atu
-                    tabelas.append({"Ativo": tk, "Qtd": int(qtd), "Preço Médio": f"R$ {pm:.2f}", "Custo Total": f"R$ {cst:.2f}", "Lucro/Prejuízo": lucro, "Rent. (%)": (lucro/cst)*100 if cst > 0 else 0, "Data": dt})
+                precos_aba = buscar_cotacoes_lote(df_agrupado['Ticker'].tolist())
+                tabelas, tot_inv, tot_atu = [], 0, 0
 
-            if tabelas:
-                df_view = pd.DataFrame(tabelas)
-                styled = df_view.style.format({"Lucro/Prejuízo": "R$ {:+.2f}", "Rent. (%)": "{:+.2f}%"}).map(lambda v: f"color: {'#00e676' if v > 0 else '#ff4b4b'}; font-weight: bold;" if isinstance(v, (int, float)) else '', subset=["Lucro/Prejuízo", "Rent. (%)"])
-                st.dataframe(styled, use_container_width=True, hide_index=True)
+                for _, row in df_agrupado.iterrows():
+                    tk, qtd, pm, cst, dt = row['Ticker'], row['Quantidade'], row['Preço Médio'], row['Custo'], row['Data da Compra']
+                    inf_aba = precos_aba.get(tk)
+                    if inf_aba and inf_aba['preco']:
+                        v_atu = qtd * inf_aba['preco']
+                        lucro = v_atu - cst
+                        tot_inv += cst
+                        tot_atu += v_atu
+                        tabelas.append({"Ativo": tk, "Qtd": int(qtd), "Preço Médio": f"R$ {pm:.2f}", "Custo Total": f"R$ {cst:.2f}", "Lucro/Prejuízo": lucro, "Rent. (%)": (lucro/cst)*100 if cst > 0 else 0, "Data": dt})
 
-                if carteira_ativa.upper() not in CARTEIRAS_TRACKING:
-                    st.markdown("### Resumo Global")
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("Totalmente Investido", f"R$ {tot_inv:,.2f}")
-                    c2.metric("Patrimônio Atual", f"R$ {tot_atu:,.2f}", f"R$ {tot_atu - tot_inv:,.2f}")
-                    c3.metric("Rentabilidade Geral", f"{(((tot_atu - tot_inv) / tot_inv) * 100 if tot_inv > 0 else 0):.2f}%")
+                if tabelas:
+                    df_view = pd.DataFrame(tabelas)
+                    styled = df_view.style.format({"Lucro/Prejuízo": "R$ {:+.2f}", "Rent. (%)": "{:+.2f}%"}).map(lambda v: f"color: {'#00e676' if v > 0 else '#ff4b4b'}; font-weight: bold;" if isinstance(v, (int, float)) else '', subset=["Lucro/Prejuízo", "Rent. (%)"])
+                    st.dataframe(styled, use_container_width=True, hide_index=True)
 
-        st.markdown("### Evolução do Ativo")
-        ativo_graf_aba = st.selectbox("Selecione o ativo:", df_agrupado['Ticker'].tolist(), key=f"sel_{carteira_ativa}")
-        df_hist = buscar_historico(ativo_graf_aba)
-        
-        if not df_hist.empty:
-            fig_linha = px.line(df_hist, x='Data', y='Preço')
-            if not is_tracking_aba:
-                pm_ativo = df_agrupado[df_agrupado['Ticker'] == ativo_graf_aba]['Preço Médio'].values[0]
-                fig_linha.add_hline(y=pm_ativo, line_dash="dash", line_color="#ff4b4b", annotation_text=f"PM: R$ {pm_ativo:.2f}")
+                    # 🚀 CORRIGIDO: Uso dinâmico de CARTEIRAS_TRACKING
+                    if nome_carteira.upper() not in CARTEIRAS_TRACKING:
+                        st.markdown("### Resumo Global")
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("Totalmente Investido", f"R$ {tot_inv:,.2f}")
+                        c2.metric("Patrimônio Atual", f"R$ {tot_atu:,.2f}", f"R$ {tot_atu - tot_inv:,.2f}")
+                        c3.metric("Rentabilidade Geral", f"{(((tot_atu - tot_inv) / tot_inv) * 100 if tot_inv > 0 else 0):.2f}%")
 
-                compras_ativo = df_ledger[df_ledger['Ticker'] == ativo_graf_aba]
-                for _, compra in compras_ativo.iterrows():
-                    try:
-                        dt_plotly = datetime.strptime(compra['Data da Compra'], "%d/%m/%Y").strftime("%Y-%m-%d")
-                        qtd = compra['Quantidade']
-                        p_pago = compra['Preço Pago']
-                        if qtd > 0:
-                            fig_linha.add_vline(
-                                x=dt_plotly, 
-                                line_dash="dot", 
-                                line_color="#378ADD", 
-                                annotation_text=f" {int(qtd)} un @ R$ {p_pago:.2f}", 
-                                annotation_position="top right"
-                            )
-                    except Exception:
-                        pass
+            st.markdown("### Evolução do Ativo")
+            ativo_graf_aba = st.selectbox("Selecione o ativo:", df_agrupado['Ticker'].tolist(), key=f"sel_{nome_carteira}")
+            df_hist = buscar_historico(ativo_graf_aba)
+            
+            if not df_hist.empty:
+                fig_linha = px.line(df_hist, x='Data', y='Preço')
+                if not is_tracking_aba:
+                    pm_ativo = df_agrupado[df_agrupado['Ticker'] == ativo_graf_aba]['Preço Médio'].values[0]
+                    fig_linha.add_hline(y=pm_ativo, line_dash="dash", line_color="#ff4b4b", annotation_text=f"PM: R$ {pm_ativo:.2f}")
 
-            fig_linha.update_layout(margin=dict(t=10, b=10, l=10, r=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white", height=250)
-            fig_linha.update_traces(line_color="#00c698")
-            st.plotly_chart(fig_linha, use_container_width=True)
+                    compras_ativo = df_ledger[df_ledger['Ticker'] == ativo_graf_aba]
+                    for _, compra in compras_ativo.iterrows():
+                        try:
+                            dt_plotly = datetime.strptime(compra['Data da Compra'], "%d/%m/%Y").strftime("%Y-%m-%d")
+                            qtd = compra['Quantidade']
+                            p_pago = compra['Preço Pago']
+                            if qtd > 0:
+                                fig_linha.add_vline(
+                                    x=dt_plotly, 
+                                    line_dash="dot", 
+                                    line_color="#378ADD", 
+                                    annotation_text=f" {int(qtd)} un @ R$ {p_pago:.2f}", 
+                                    annotation_position="top right"
+                                )
+                        except Exception:
+                            pass
+
+                fig_linha.update_layout(margin=dict(t=10, b=10, l=10, r=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white", height=250)
+                fig_linha.update_traces(line_color="#00c698")
+                st.plotly_chart(fig_linha, use_container_width=True)
 
     # --- PAINEL: MAIORES ALTAS E BAIXAS ---
     st.markdown("<br>", unsafe_allow_html=True)
