@@ -11,7 +11,7 @@ from streamlit_searchbox import st_searchbox
 # Configuração para usar o ecrã inteiro
 st.set_page_config(page_title="Meu Portfólio", page_icon="📈", layout="wide")
 
-# 🚀 RESET COMPLETO DE CSS: Corrige o corte do letreiro e elimina o vão preto do topo
+# 🚀 RESET DE CSS CORRIGIDO: Troca a margem negativa por um distanciamento saudável de 20px
 st.markdown("""
     <style>
         /* Esconde o cabeçalho nativo do Streamlit */
@@ -21,7 +21,7 @@ st.markdown("""
             opacity: 0 !important;
         }
         
-        /* Define um recuo pequeno e perfeito (8px) para o letreiro não ser cortado no teto */
+        /* Define um recuo pequeno e perfeito para o letreiro respirar no teto */
         .main .block-container, 
         [data-testid="stAppViewBlockContainer"],
         [data-testid="stMainBlockContainer"],
@@ -40,9 +40,9 @@ st.markdown("""
             margin-top: 0px !important;
         }
 
-        /* 🚀 Puxa o bloco de conteúdo principal para cima, colando-o logo abaixo do letreiro */
+        /* 🚀 CORREÇÃO: Afasta o bloco principal do letreiro para eliminar o efeito encavalado */
         div[data-testid="stHorizontalBlock"] {
-            margin-top: -25px !important;
+            margin-top: 20px !important;
         }
 
         /* Customização para fazer o st.radio horizontal parecer abas elegantes */
@@ -54,7 +54,7 @@ st.markdown("""
             gap: 15px !important;
             border-bottom: 1px solid #2B3040;
             padding-bottom: 5px;
-            margin-bottom: 10px;
+            margin-bottom: 15px;
         }
         div[data-testid="stRadio"] div[role="radiogroup"] label {
             background: transparent !important;
@@ -234,13 +234,6 @@ def salvar_dados(dados):
 
 if "carteira" not in st.session_state:
     st.session_state["carteira"] = carregar_dados()
-
-# Mapeamento dinâmico de tipos de carteiras
-CARTEIRAS_TRACKING = {str(a["Carteira"]).upper() for a in st.session_state["carteira"] if a.get("Tipo_Carteira") == "TRACKING"}
-CARTEIRAS_TRACKING.add("WATCHLIST")
-
-def eh_patrimonio_real(ativo):
-    return str(ativo.get("Carteira", "COMPRAS (Real)")).upper() not in CARTEIRAS_TRACKING
 
 # ==========================================
 # --- 2. FUNÇÕES DE DADOS (YFINANCE) ---
@@ -493,7 +486,7 @@ def eh_patrimonio_real(ativo):
 # ==========================================
 indices = buscar_indices_topo()
 
-# 🚀 CORREÇÃO DO LETREIRO TAPE: Injetado CSS no body interno do iframe para resetar margens e fixar a altura em 45px
+# Letreiro tape dinâmico e seguro
 simbolos_letreiro = [
     {"proName": "BMFBOVESPA:IBOV", "title": "Ibovespa"},
     {"proName": "FX_IDC:USDBRL", "title": "Dólar"},
@@ -514,7 +507,6 @@ codigo_letreiro = f"""
 </div>
 </body>
 """
-# 🚀 Reduzido para height=45 (tamanho real do letreiro) para matar o espaço preto morto debaixo dele
 components.html(codigo_letreiro, height=45)
 
 def criar_cartao_html(titulo, valor, variacao, pct, prefixo="", watchlist=False):
