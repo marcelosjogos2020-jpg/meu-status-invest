@@ -267,8 +267,8 @@ def buscar_cotacoes_lote(tickers):
                 if len(df_ticker) >= 2:
                     atual = float(df_ticker["Close"].iloc[-1])
                     anterior = float(df_ticker["Close"].iloc[-2])
-                    var = Suk = atual - anterior
-                    pct = (Suk / anterior) * 100
+                    var = atual - anterior
+                    pct = (var / anterior) * 100
                 elif len(df_ticker) == 1:
                     atual = float(df_ticker["Close"].iloc[-1])
                     var, pct = 0.0, 0.0
@@ -463,7 +463,7 @@ with st.sidebar:
             st.success("Pasta renomeada com sucesso!")
             st.rerun()
 
-    # 🚀 REMOVER ATIVO TOTALMENTE SEGURO: Uso do split limitado e checagem forte de string para evitar ValueError
+    # 🚀 CORREÇÃO DO REMOVER ATIVO: Mudado de .replace para fatiamento slice [:-1] para blindar pastas com parênteses
     st.divider()
     st.header("❌ Remover Ativo")
     lista_ativos_remover = [f"{a['Ticker']} ({a['Carteira']})" for a in st.session_state["carteira"] if a["Ticker"] != "CAIXA"]
@@ -474,7 +474,8 @@ with st.sidebar:
         if ativo_para_remover != "Selecionar Ativo..." and " (" in ativo_para_remover:
             parts = ativo_para_remover.split(" (", 1)
             tk_excluir = parts[0].strip()
-            cart_excluir = parts[1].replace(")", "").strip()
+            # Fatiamento cirúrgico de string para arrancar apenas o ÚLTIMO caractere ) adicionado pelo label
+            cart_excluir = parts[1][:-1].strip()
             
             st.session_state["carteira"] = [
                 a for a in st.session_state["carteira"]
