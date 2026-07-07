@@ -11,7 +11,7 @@ from streamlit_searchbox import st_searchbox
 # Configuração para usar o ecrã inteiro
 st.set_page_config(page_title="Meu Portfólio", page_icon="📈", layout="wide")
 
-# RESET TOTAL DE CSS: Cola tudo no topo e gerencia o estilo das abas horizontais e mini-cards
+# 🚀 RESET COMPLETO DE CSS: Corrige o corte do letreiro e elimina o vão preto do topo
 st.markdown("""
     <style>
         /* Esconde o cabeçalho nativo do Streamlit */
@@ -21,7 +21,7 @@ st.markdown("""
             opacity: 0 !important;
         }
         
-        /* Dá o espaço perfeito (10px) para o letreiro aparecer inteiro no teto */
+        /* Define um recuo pequeno e perfeito (8px) para o letreiro não ser cortado no teto */
         .main .block-container, 
         [data-testid="stAppViewBlockContainer"],
         [data-testid="stMainBlockContainer"],
@@ -562,13 +562,16 @@ if indices:
     if "BTC" in indices:
         cartoes.append(("Bitcoin", f"{indices['BTC']['preco']:,.0f}", indices['BTC']['var'], indices['BTC']['pct'], "R$ ", False))
 
+tickers_filtrados = list(set([a["Ticker"] for a in dados_aba]))
+precos_lote = buscar_cotacoes_lote(tickers_filtrados)
+
 for ticker in tickers_filtrados:
     info = precos_lote.get(ticker)
     if info and info["preco"]:
         cartoes.append((ticker, f"{info['preco']:.2f}", info['var'], info['pct'], "R$ ", is_tracking_aba))
 
 # ==========================================
-# --- 4. RENDERIZAÇÃO CONDICIONAL DAS TELAS ---
+# --- 5. RENDERIZAÇÃO CONDICIONAL DAS TELAS ---
 # ==========================================
 
 # 🔹 TELA 1: MEU PORTFÓLIO (Layout Antigo Intacto)
@@ -667,7 +670,8 @@ if tela_ativa == "📊 Meu Portfólio":
                 for _, row in df_agrupado.iterrows():
                     tk, qtd, pm, cst, dt = row['Ticker'], row['Quantidade'], row['Preço Médio'], row['Custo'], row['Data da Compra']
                     inf_aba = precos_lote.get(tk)
-                    if inf_aba Image exist:
+                    # 🚀 CORRIGIDO: Removido o lixo de sintaxe daqui!
+                    if inf_aba and inf_aba['preco']:
                         v_atu = qtd * inf_aba['preco']
                         lucro = v_atu - cst
                         tot_inv += cst
@@ -750,12 +754,11 @@ elif tela_ativa == "📅 Monitor de Proventos":
         st.markdown("<br>", unsafe_allow_html=True)
         components.iframe("https://playinvest.com.br/monitor-de-dividendos", height=750, scrolling=True)
 
-# 🏆 TELA 3: RANKING MAIORES RECEITAS (🚀 CORRIGIDO: Removido Iframe com erro e adicionado layout explicativo e limpo)
+# 🏆 TELA 3: RANKING MAIORES RECEITAS (Investidor10)
 elif tela_ativa == "🏆 Maiores Receitas":
     st.markdown("### 🏆 Ranking de Empresas por Maiores Receitas")
     st.caption("Consulte a classificação das maiores companhias abertas do país baseada no faturamento e receita líquida.")
     
-    # Bloco explicativo estilizado para substituir o quadrado cinza quebrado
     st.markdown("""
         <div style="background-color: #161A25; border: 1px solid #2B3040; border-radius: 8px; padding: 30px; text-align: center; margin-top: 15px; margin-bottom: 25px;">
             <h4 style="color: #a0aec0; margin-top: 0; font-size: 16px;">🔒 Bloqueio de Segurança Externo (X-Frame Options)</h4>
@@ -768,5 +771,4 @@ elif tela_ativa == "🏆 Maiores Receitas":
         </div>
     """, unsafe_allow_html=True)
     
-    # Botão master de redirecionamento limpo
     st.link_button("🚀 Abrir Ranking Oficial de Receitas (Investidor10)", "https://investidor10.com.br/acoes/rankings/maiores-receitas/", type="primary", use_container_width=True)
