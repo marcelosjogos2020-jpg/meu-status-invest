@@ -11,7 +11,7 @@ from streamlit_searchbox import st_searchbox
 # Configuração para usar o ecrã inteiro
 st.set_page_config(page_title="Meu Portfólio", page_icon="📈", layout="wide")
 
-# RESET TOTAL DE CSS: Cola tudo no topo e gerencia o estilo das abas horizontais e mini-cards
+# 🚀 RESET COMPLETO DE CSS: Corrige o corte do letreiro e elimina o vão preto do topo
 st.markdown("""
     <style>
         /* Esconde o cabeçalho nativo do Streamlit */
@@ -21,12 +21,12 @@ st.markdown("""
             opacity: 0 !important;
         }
         
-        /* Dá o espaço perfeito (10px) para o letreiro aparecer inteiro no teto */
+        /* Define um recuo pequeno e perfeito (8px) para o letreiro não ser cortado no teto */
         .main .block-container, 
         [data-testid="stAppViewBlockContainer"],
         [data-testid="stMainBlockContainer"],
         [data-testid="stVerticalBlockRoot"] {
-            padding-top: 10px !important;
+            padding-top: 8px !important;
             margin-top: 0px !important;
         }
 
@@ -38,6 +38,11 @@ st.markdown("""
         
         iframe {
             margin-top: 0px !important;
+        }
+
+        /* 🚀 Puxa o bloco de conteúdo principal para cima, colando-o logo abaixo do letreiro */
+        div[data-testid="stHorizontalBlock"] {
+            margin-top: -25px !important;
         }
 
         /* Customização para fazer o st.radio horizontal parecer abas elegantes */
@@ -230,6 +235,13 @@ def salvar_dados(dados):
 if "carteira" not in st.session_state:
     st.session_state["carteira"] = carregar_dados()
 
+# Mapeamento dinâmico de tipos de carteiras
+CARTEIRAS_TRACKING = {str(a["Carteira"]).upper() for a in st.session_state["carteira"] if a.get("Tipo_Carteira") == "TRACKING"}
+CARTEIRAS_TRACKING.add("WATCHLIST")
+
+def eh_patrimonio_real(ativo):
+    return str(ativo.get("Carteira", "COMPRAS (Real)")).upper() not in CARTEIRAS_TRACKING
+
 # ==========================================
 # --- 2. FUNÇÕES DE DADOS (YFINANCE) ---
 # ==========================================
@@ -371,8 +383,6 @@ with st.sidebar:
             st.warning("Não consegui buscar a cotação agora.")
 
     carteira_selecionada = st.selectbox("Carteira Destino", carteiras_existentes)
-    
-    # 🚀 NOVO: Opção explícita se o ativo é uma compra real ou apenas acompanhamento
     tipo_adicao = st.radio("Tipo de Registro:", ["💰 Compra Real", "👁️ Só Acompanhar Cotação"], horizontal=True)
 
     if tipo_adicao == "👁️ Só Acompanhar Cotação":
@@ -463,14 +473,12 @@ if "carteira_ativa_radio" not in st.session_state:
 carteira_ativa = st.session_state["carteira_ativa_radio"]
 
 # ==========================================
-# --- DETECÇÃO AUTOMÁTICA DO TIPO DE CARTEIRA (INTELIGENTE E SEGURO) ---
+# --- DETECÇÃO AUTOMÁTICA DO TIPO DE CARTEIRA ---
 # ==========================================
 dados_aba = [
     a for a in st.session_state["carteira"] 
     if str(a.get("Carteira", "COMPRAS (Real)")).upper() == carteira_ativa.upper() and str(a.get("Ticker")) != "CAIXA"
 ]
-
-# 🚀 SEGURO: Se houver qualquer ativo com Quantidade > 0 na pasta, ela vira AUTOMATICAMENTE "Real/Investimento".
 ativos_com_quantidade = [a for a in dados_aba if float(a.get("Quantidade", 0)) > 0]
 is_tracking_aba = (carteira_ativa.upper() == "WATCHLIST") or (len(ativos_com_quantidade) == 0)
 
@@ -481,9 +489,33 @@ def eh_patrimonio_real(ativo):
     return nome_cart != "WATCHLIST" and len(tem_quantidade) > 0
 
 # ==========================================
-# --- PREPARAÇÃO DOS DADOS DO TOPO (FILTRADOS) ---
+# --- PREPARAÇÃO DOS DADOS DO TOPO ---
 # ==========================================
 indices = buscar_indices_topo()
+
+# 🚀 CORREÇÃO DO LETREIRO TAPE: Injetado CSS no body interno do iframe para resetar margens e fixar a altura em 45px
+simbolos_letreiro = [
+    {"proName": "BMFBOVESPA:IBOV", "title": "Ibovespa"},
+    {"proName": "FX_IDC:USDBRL", "title": "Dólar"},
+    {"proName": "BINANCE:BTCBRL", "title": "Bitcoin"}
+]
+if len(st.session_state["carteira"]) > 0:
+    ativos_unicos = list(set([str(a["Ticker"]).upper().strip() for a in st.session_state["carteira"] if pd.notna(a.get("Ticker")) and str(a["Ticker"]).upper() != "CAIXA" and str(a["Ticker"]).strip() != ""]))
+    for ativo in ativos_unicos[:10]:
+        simbolos_letreiro.append({"proName": f"BMFBOVESPA:{ativo}", "title": ativo})
+
+codigo_letreiro = f"""
+<body style="margin: 0; padding: 0; background-color: #0e1117; overflow: hidden;">
+<div class="tradingview-widget-container">
+  <div class="tradingview-widget-container__widget"></div>
+  <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
+  {{"symbols": {json.dumps(simbolos_letreiro)}, "showSymbolLogo": true, "isTransparent": true, "displayMode": "adaptive", "colorTheme": "dark", "locale": "br"}}
+  </script>
+</div>
+</body>
+"""
+# 🚀 Reduzido para height=45 (tamanho real do letreiro) para matar o espaço preto morto debaixo dele
+components.html(codigo_letreiro, height=45)
 
 def criar_cartao_html(titulo, valor, variacao, pct, prefixo="", watchlist=False):
     cor = "#00e676" if variacao >= 0 else "#ff4b4b"
@@ -514,17 +546,6 @@ for ticker in tickers_filtrados:
     info = precos_lote.get(ticker)
     if info and info["preco"]:
         cartoes.append((ticker, f"{info['preco']:.2f}", info['var'], info['pct'], "R$ ", is_tracking_aba))
-
-# Letreiro tape dinâmico e seguro
-simbolos_letreiro = [
-    {"proName": "BMFBOVESPA:IBOV", "title": "Ibovespa"},
-    {"proName": "FX_IDC:USDBRL", "title": "Dólar"},
-    {"proName": "BINANCE:BTCBRL", "title": "Bitcoin"}
-]
-if len(st.session_state["carteira"]) > 0:
-    ativos_unicos = list(set([str(a["Ticker"]).upper().strip() for a in st.session_state["carteira"] if pd.notna(a.get("Ticker")) and str(a["Ticker"]).upper() != "CAIXA" and str(a["Ticker"]).strip() != ""]))
-    for ativo in ativos_unicos[:10]:
-        simbolos_letreiro.append({"proName": f"BMFBOVESPA:{ativo}", "title": ativo})
 
 # ==========================================
 # --- 5. ESTRUTURA PRINCIPAL ---
@@ -593,7 +614,6 @@ with col_dir:
         df_agrupado = pd.DataFrame()
     else:
         if is_tracking_aba:
-            # 📊 VISUALIZAÇÃO DE ACOMPANHAMENTO
             df_agrupado = pd.DataFrame(dados_aba).groupby('Ticker').agg({'Data da Compra': 'last'}).reset_index()
             tabelas = []
             for _, row in df_agrupado.iterrows():
@@ -614,7 +634,6 @@ with col_dir:
                 )
                 st.dataframe(styled, use_container_width=True, hide_index=True)
         else:
-            # 💰 VISUALIZAÇÃO DE COMPRAS REAIS
             df_ledger = pd.DataFrame(dados_aba)
             df_ledger["Custo"] = df_ledger["Quantidade"] * df_ledger["Preço Pago"]
             df_agrupado = df_ledger.groupby('Ticker').agg({'Quantidade': 'sum', 'Custo': 'sum', 'Data da Compra': 'last'}).reset_index()
