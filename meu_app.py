@@ -11,7 +11,7 @@ from streamlit_searchbox import st_searchbox
 # Configuração para usar o ecrã inteiro
 st.set_page_config(page_title="Meu Portfólio", page_icon="📈", layout="wide")
 
-# RESET TOTAL DE CSS: Cola tudo no topo e gerencia o estilo das abas horizontais e mini-cards
+# 🚀 RESET COMPLETO DE CSS: Corrige o corte do letreiro e elimina o vão preto do topo
 st.markdown("""
     <style>
         /* Esconde o cabeçalho nativo do Streamlit */
@@ -463,7 +463,6 @@ with st.sidebar:
             st.success("Pasta renomeada com sucesso!")
             st.rerun()
 
-    # 🚀 NOVO PANEL: Opção de exclusão cirúrgica de ativos adicionados por engano
     st.divider()
     st.header("❌ Remover Ativo")
     lista_ativos_remover = [f"{a['Ticker']} ({a['Carteira']})" for a in st.session_state["carteira"] if a["Ticker"] != "CAIXA"]
@@ -507,16 +506,13 @@ with st.sidebar:
             st.error("Arquivo de backup inválido.")
 
 # ==========================================
-# --- SESSÃO GLOBAL DA CARTEIRA ATIVA ---
+# --- RESOLUÇÃO E ESTRUTURAÇÃO DOS DADOS (CORRIGIDO) ---
 # ==========================================
 if "carteira_ativa_radio" not in st.session_state:
     st.session_state["carteira_ativa_radio"] = carteiras_existentes[0]
 
 carteira_ativa = st.session_state["carteira_ativa_radio"]
 
-# ==========================================
-# --- DETECÇÃO AUTOMÁTICA DO TIPO DE CARTEIRA ---
-# ==========================================
 dados_aba = [
     a for a in st.session_state["carteira"] 
     if str(a.get("Carteira", "COMPRAS (Real)")).upper() == carteira_ativa.upper() and str(a.get("Ticker")) != "CAIXA"
@@ -535,10 +531,9 @@ for c_name in carteiras_existentes:
 def eh_patrimonio_real(ativo):
     return str(ativo.get("Carteira", "COMPRAS (Real)")).upper() not in CARTEIRAS_TRACKING
 
-# ==========================================
-# --- PREPARAÇÃO DOS DADOS DO TOPO ---
-# ==========================================
-indices = buscar_indices_topo()
+# Tickers filtrados e cotações em lote calculados ANTES da geração de cartões
+tickers_filtrados = list(set([a["Ticker"] for a in dados_aba]))
+precos_lote = buscar_cotacoes_lote(tickers_filtrados)
 
 # Letreiro tape dinâmico e seguro
 simbolos_letreiro = [
@@ -551,6 +546,32 @@ if len(st.session_state["carteira"]) > 0:
     for ativo in ativos_unicos[:10]:
         simbolos_letreiro.append({"proName": f"BMFBOVESPA:{ativo}", "title": ativo})
 
+codigo_letreiro = f"""
+<body style="margin: 0; padding: 0; background-color: #0e1117; overflow: hidden;">
+<div class="tradingview-widget-container">
+  <div class="tradingview-widget-container__widget"></div>
+  <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
+  {{"symbols": {json.dumps(simbolos_letreiro)}, "showSymbolLogo": true, "isTransparent": true, "displayMode": "adaptive", "colorTheme": "dark", "locale": "br"}}
+  </script>
+</div>
+</body>
+"""
+components.html(codigo_letreiro, height=45)
+
+def criar_cartao_html(titulo, valor, variacao, pct, prefixo="", watchlist=False):
+    cor = "#00e676" if variacao >= 0 else "#ff4b4b"
+    sinal = "+" if variacao >= 0 else ""
+    borda = "1.5px solid #378ADD" if watchlist else "1px solid #2B3040"
+    nome_exibicao = f"👁️ {titulo}" if watchlist else titulo
+    return (
+        f'<div class="mini-card {"mini-card-watch" if watchlist else ""}">'
+        f'<div class="card-ticker">{nome_exibicao}</div>'
+        f'<div class="card-preco">{prefixo}{valor}</div>'
+        f'<div class="card-var {"var-positiva" if variacao >= 0 else "var-negativa"}">{sinal}{pct:.2f}%</div>'
+        f'</div>'
+    )
+
+indices = buscar_indices_topo()
 cartoes = []
 if indices:
     if "IBOV" in indices:
@@ -559,9 +580,6 @@ if indices:
         cartoes.append(("Dólar", f"{indices['USD']['preco']:.4f}", indices['USD']['var'], indices['USD']['pct'], "R$ ", False))
     if "BTC" in indices:
         cartoes.append(("Bitcoin", f"{indices['BTC']['preco']:,.0f}", indices['BTC']['var'], indices['BTC']['pct'], "R$ ", False))
-
-tickers_filtrados = list(set([a["Ticker"] for a in dados_aba]))
-precos_lote = buscar_cotacoes_lote(tickers_filtrados)
 
 for ticker in tickers_filtrados:
     info = precos_lote.get(ticker)
