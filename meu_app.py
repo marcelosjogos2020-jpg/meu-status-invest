@@ -11,7 +11,7 @@ from streamlit_searchbox import st_searchbox
 # Configuração para usar o ecrã inteiro
 st.set_page_config(page_title="Meu Portfólio", page_icon="📈", layout="wide")
 
-# 🚀 RESET COMPLETO DE CSS: Corrige o corte do letreiro e elimina o vão preto do topo
+# RESET TOTAL DE CSS: Cola tudo no topo e gerencia o estilo das abas horizontais e mini-cards
 st.markdown("""
     <style>
         /* Esconde o cabeçalho nativo do Streamlit */
@@ -40,6 +40,11 @@ st.markdown("""
             margin-top: 0px !important;
         }
 
+        /* Afasta o bloco principal do letreiro para eliminar o efeito encavalado */
+        div[data-testid="stHorizontalBlock"] {
+            margin-top: 20px !important;
+        }
+
         /* Customização para fazer o st.radio horizontal parecer abas elegantes */
         div[data-testid="stRadio"] > label {
             display: none !important;
@@ -49,7 +54,7 @@ st.markdown("""
             gap: 15px !important;
             border-bottom: 1px solid #2B3040;
             padding-bottom: 5px;
-            margin-bottom: 10px;
+            margin-bottom: 15px;
         }
         div[data-testid="stRadio"] div[role="radiogroup"] label {
             background: transparent !important;
@@ -229,13 +234,6 @@ def salvar_dados(dados):
 
 if "carteira" not in st.session_state:
     st.session_state["carteira"] = carregar_dados()
-
-# Mapeamento dinâmico de tipos de carteiras
-CARTEIRAS_TRACKING = {str(a["Carteira"]).upper() for a in st.session_state["carteira"] if a.get("Tipo_Carteira") == "TRACKING"}
-CARTEIRAS_TRACKING.add("WATCHLIST")
-
-def eh_patrimonio_real(ativo):
-    return str(ativo.get("Carteira", "COMPRAS (Real)")).upper() not in CARTEIRAS_TRACKING
 
 # ==========================================
 # --- 2. FUNÇÕES DE DADOS (YFINANCE) ---
@@ -465,6 +463,26 @@ with st.sidebar:
             st.success("Pasta renomeada com sucesso!")
             st.rerun()
 
+    # 🚀 NOVO PANEL: Opção de exclusão cirúrgica de ativos adicionados por engano
+    st.divider()
+    st.header("❌ Remover Ativo")
+    lista_ativos_remover = [f"{a['Ticker']} ({a['Carteira']})" for a in st.session_state["carteira"] if a["Ticker"] != "CAIXA"]
+    lista_ativos_remover = list(set(lista_ativos_remover))
+    
+    ativo_para_remover = st.selectbox("Selecione o Ativo para Excluir", ["Selecionar Ativo..."] + sorted(lista_ativos_remover), key="sel_remover_box")
+    if st.button("Excluir Permanentemente", use_container_width=True):
+        if ativo_para_remover != "Selecionar Ativo...":
+            tk_excluir, cart_excluir = ativo_para_remover.split(" (")
+            cart_excluir = cart_excluir.replace(")", "")
+            
+            st.session_state["carteira"] = [
+                a for a in st.session_state["carteira"]
+                if not (str(a.get("Ticker")).upper() == tk_excluir.upper() and str(a.get("Carteira")).upper() == cart_excluir.upper())
+            ]
+            st.session_state["carteira"] = salvar_dados(st.session_state["carteira"])
+            st.success(f"{tk_excluir} removido com sucesso!")
+            st.rerun()
+
     st.divider()
     st.header("💾 Backup dos Dados")
     if len(st.session_state["carteira"]) > 0:
@@ -506,11 +524,16 @@ dados_aba = [
 ativos_com_quantidade = [a for a in dados_aba if float(a.get("Quantidade", 0)) > 0]
 is_tracking_aba = (carteira_ativa.upper() == "WATCHLIST") or (len(ativos_com_quantidade) == 0)
 
+# Mapeamento dinâmico de tracking para o patrimônio global
+CARTEIRAS_TRACKING = set()
+for c_name in carteiras_existentes:
+    validos = [a for a in st.session_state["carteira"] if str(a.get("Carteira")).upper() == c_name.upper() and a["Ticker"] != "CAIXA"]
+    com_qtd = [a for a in validos if float(a.get("Quantidade", 0)) > 0]
+    if c_name.upper() == "WATCHLIST" or len(com_qtd) == 0:
+        CARTEIRAS_TRACKING.add(c_name.upper())
+
 def eh_patrimonio_real(ativo):
-    nome_cart = str(ativo.get("Carteira", "COMPRAS (Real)")).upper()
-    ativos_da_pasta = [a for a in st.session_state["carteira"] if str(a.get("Carteira")).upper() == nome_cart and a["Ticker"] != "CAIXA"]
-    tem_quantidade = [a for a in ativos_da_pasta if float(a.get("Quantidade", 0)) > 0]
-    return nome_cart != "WATCHLIST" and len(tem_quantidade) > 0
+    return str(ativo.get("Carteira", "COMPRAS (Real)")).upper() not in CARTEIRAS_TRACKING
 
 # ==========================================
 # --- PREPARAÇÃO DOS DADOS DO TOPO ---
@@ -527,31 +550,6 @@ if len(st.session_state["carteira"]) > 0:
     ativos_unicos = list(set([str(a["Ticker"]).upper().strip() for a in st.session_state["carteira"] if pd.notna(a.get("Ticker")) and str(a["Ticker"]).upper() != "CAIXA" and str(a["Ticker"]).strip() != ""]))
     for ativo in ativos_unicos[:10]:
         simbolos_letreiro.append({"proName": f"BMFBOVESPA:{ativo}", "title": ativo})
-
-codigo_letreiro = f"""
-<body style="margin: 0; padding: 0; background-color: #0e1117; overflow: hidden;">
-<div class="tradingview-widget-container">
-  <div class="tradingview-widget-container__widget"></div>
-  <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
-  {{"symbols": {json.dumps(simbolos_letreiro)}, "showSymbolLogo": true, "isTransparent": true, "displayMode": "adaptive", "colorTheme": "dark", "locale": "br"}}
-  </script>
-</div>
-</body>
-"""
-components.html(codigo_letreiro, height=45)
-
-def criar_cartao_html(titulo, valor, variacao, pct, prefixo="", watchlist=False):
-    cor = "#00e676" if variacao >= 0 else "#ff4b4b"
-    sinal = "+" if variacao >= 0 else ""
-    borda = "1.5px solid #378ADD" if watchlist else "1px solid #2B3040"
-    nome_exibicao = f"👁️ {titulo}" if watchlist else titulo
-    return (
-        f'<div class="mini-card {"mini-card-watch" if watchlist else ""}">'
-        f'<div class="card-ticker">{nome_exibicao}</div>'
-        f'<div class="card-preco">{prefixo}{valor}</div>'
-        f'<div class="card-var {"var-positiva" if variacao >= 0 else "var-negativa"}">{sinal}{pct:.2f}%</div>'
-        f'</div>'
-    )
 
 cartoes = []
 if indices:
@@ -571,7 +569,7 @@ for ticker in tickers_filtrados:
         cartoes.append((ticker, f"{info['preco']:.2f}", info['var'], info['pct'], "R$ ", is_tracking_aba))
 
 # ==========================================
-# --- 4. RENDERIZAÇÃO CONDICIONAL DAS TELAS ---
+# --- 5. RENDERIZAÇÃO CONDICIONAL DAS TELAS ---
 # ==========================================
 
 # 🔹 TELA 1: MEU PORTFÓLIO
@@ -753,12 +751,11 @@ elif tela_ativa == "📅 Monitor de Proventos":
         st.markdown("<br>", unsafe_allow_html=True)
         components.iframe("https://playinvest.com.br/monitor-de-dividendos", height=750, scrolling=True)
 
-# 🏆 TELA 3: RANKING MAIORES RECEITAS (🚀 REFORMULADA: 100% Nativa, Limpa e Sem Mensagem de Erro)
+# 🏆 TELA 3: RANKING MAIORES RECEITAS (Investidor10 Nativo)
 elif tela_ativa == "🏆 Maiores Receitas":
     st.markdown("### 🏆 Ranking das Empresas Brasileiras por Maiores Receitas (B3)")
     st.caption("Classificação oficial nativa das maiores companhias abertas do país classificadas por faturamento e receita líquida anual.")
     
-    # Tabela nativa limpa com o Top 10 das Maiores Receitas Corporativas do país
     dados_receitas = [
         {"Posição": 1, "Ticker": "PETR4", "Empresa": "Petrobras", "Receita Líquida": "R$ 511.9 Bilhões", "Setor": "Petróleo, Gás e Combustíveis"},
         {"Posição": 2, "Ticker": "JBSS3", "Empresa": "JBS", "Receita Líquida": "R$ 364.3 Bilhões", "Setor": "Alimentos Processados"},
@@ -772,10 +769,7 @@ elif tela_ativa == "🏆 Maiores Receitas":
         {"Posição": 10, "Ticker": "BBDC4", "Empresa": "Bradesco", "Receita Líquida": "R$ 91.3 Bilhões", "Setor": "Intermediários Financeiros"},
     ]
     df_receitas = pd.DataFrame(dados_receitas)
-    
-    # Renderiza os dados no tema escuro do app de forma nativa e rápida
     st.dataframe(df_receitas, use_container_width=True, hide_index=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
-    # Mantém o redirecionamento direto, caso você queira entrar no site deles para fazer outras buscas complexas
     st.link_button("🚀 Explorar Filtros e Mais Indicadores Diretamente no Investidor10", "https://investidor10.com.br/acoes/rankings/maiores-receitas/", type="primary", use_container_width=True)
