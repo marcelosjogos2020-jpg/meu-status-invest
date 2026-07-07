@@ -230,6 +230,13 @@ def salvar_dados(dados):
 if "carteira" not in st.session_state:
     st.session_state["carteira"] = carregar_dados()
 
+# Mapeamento dinâmico de tipos de carteiras
+CARTEIRAS_TRACKING = {str(a["Carteira"]).upper() for a in st.session_state["carteira"] if a.get("Tipo_Carteira") == "TRACKING"}
+CARTEIRAS_TRACKING.add("WATCHLIST")
+
+def eh_patrimonio_real(ativo):
+    return str(ativo.get("Carteira", "COMPRAS (Real)")).upper() not in CARTEIRAS_TRACKING
+
 # ==========================================
 # --- 2. FUNÇÕES DE DADOS (YFINANCE) ---
 # ==========================================
@@ -344,7 +351,6 @@ def buscar_historico(ticker):
     except Exception:
         return pd.DataFrame()
 
-# 🚀 NOVO: Puxa o histórico de proventos pagos pelos ativos do usuário
 @st.cache_data(ttl=7200)
 def buscar_proventos_ativos(tickers):
     proventos_lista = []
@@ -355,7 +361,6 @@ def buscar_proventos_ativos(tickers):
             if not divs.empty:
                 df_divs = divs.to_frame().reset_index()
                 df_divs['Date'] = df_divs['Date'].dt.tz_localize(None)
-                # Filtrar proventos dos últimos 2 anos (2024-2026) para ficar limpo
                 df_divs = df_divs[df_divs['Date'] >= '2024-01-01']
                 for _, row in df_divs.iterrows():
                     proventos_lista.append({
@@ -379,9 +384,9 @@ if "COMPRAS (Real)" not in carteiras_existentes: carteiras_existentes.insert(0, 
 if "WATCHLIST" not in carteiras_existentes: carteiras_existentes.append("WATCHLIST")
 
 with st.sidebar:
-    # 🚀 NOVO: Menu de navegação para alternar de tela
     st.header("🗺️ Menu Principal")
-    tela_ativa = st.radio("Navegar para:", ["📊 Meu Portfólio", "📅 Monitor de Proventos"], index=0)
+    # 🚀 ADICIONADO: Terceira opção "🏆 Maiores Receitas" no menu de navegação
+    tela_ativa = st.radio("Navegar para:", ["📊 Meu Portfólio", "📅 Monitor de Proventos", "🏆 Maiores Receitas"], index=0)
     st.divider()
 
     st.header("🛒 Adicionar Ativo")
@@ -722,41 +727,41 @@ if tela_ativa == "📊 Meu Portfólio":
         html_painel += """</div></div><a href="https://statusinvest.com.br/acoes/alta-e-baixa" target="_blank" class="btn-mais">Ver mais cotações</a>"""
         st.markdown(html_painel, unsafe_allow_html=True)
 
-# 🔹 TELA 2: MONITOR DE PROVENTOS (Nova Seção Integrada)
+# 📅 TELA 2: MONITOR DE PROVENTOS (PlayInvest)
 elif tela_ativa == "📅 Monitor de Proventos":
     st.markdown("### 📅 Central de Proventos & Dividendos")
-    
-    # Organiza em duas colunas: Histórico Nativo da Carteira vs Ferramenta Externa
     c_provento_esq, c_provento_dir = st.columns([1.0, 1.2], gap="large")
-    
     with c_provento_esq:
         st.subheader("💵 Histórico de Dividendos dos Seus Ativos")
         st.caption("Puxando pagamentos executados recentemente das ações/FIIs salvos nas suas pastas.")
-        
         todos_ativos_cadastrados = list(set([a["Ticker"] for a in st.session_state["carteira"] if a["Ticker"] != "CAIXA"]))
-        
         if not todos_ativos_cadastrados:
             st.info("Adicione ativos na barra lateral para ver o histórico de proventos deles aqui.")
         else:
             with st.spinner("Atualizando histórico de proventos..."):
                 df_divs_ativos = buscar_proventos_ativos(todos_ativos_cadastrados)
-            
             if not df_divs_ativos.empty:
-                # Formata a exibição da tabela de proventos nativa
                 df_divs_styled = df_divs_ativos.style.format({"Valor": "R$ {:.4f}"}).map(
                     lambda v: 'color: #00e676; font-weight: bold;' if isinstance(v, (int, float)) else ''
                 )
                 st.dataframe(df_divs_styled, use_container_width=True, hide_index=True)
             else:
                 st.warning("Nenhum dividendo recente encontrado para os ativos cadastrados.")
-
     with c_provento_dir:
         st.subheader("🔍 Monitor de Proventos (PlayInvest)")
         st.caption("Calendário completo com as próximas 'Datas Com', anúncios e pagamentos projetados do mercado.")
-        
-        # Botão de segurança para abrir fora caso o navegador bloqueie o iframe
         st.link_button("🔗 Abrir Monitor em Nova Aba", "https://playinvest.com.br/monitor-de-dividendos", type="primary", use_container_width=True)
         st.markdown("<br>", unsafe_allow_html=True)
-        
-        # Injeta a janela com a ferramenta do site PlayInvest dentro do seu painel
         components.iframe("https://playinvest.com.br/monitor-de-dividendos", height=750, scrolling=True)
+
+# 🏆 TELA 3: RANKING MAIORES RECEITAS (🚀 NOVA SEÇÃO - Investidor10)
+elif tela_ativa == "🏆 Maiores Receitas":
+    st.markdown("### 🏆 Ranking de Empresas por Maiores Receitas")
+    st.caption("Consulte a tabela completa de classificação das maiores companhias abertas do país classificadas pelo faturamento/receita líquida.")
+    
+    # Botão de segurança para carregar fora caso o navegador trave o iframe
+    st.link_button("🔗 Abrir Ranking Completo no Investidor10", "https://investidor10.com.br/acoes/rankings/maiores-receitas/", type="primary", use_container_width=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Injeta a janela da Investidor10 perfeitamente dimensionada no painel
+    components.iframe("https://investidor10.com.br/acoes/rankings/maiores-receitas/", height=800, scrolling=True)
