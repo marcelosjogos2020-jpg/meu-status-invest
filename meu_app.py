@@ -267,8 +267,8 @@ def buscar_cotacoes_lote(tickers):
                 if len(df_ticker) >= 2:
                     atual = float(df_ticker["Close"].iloc[-1])
                     anterior = float(df_ticker["Close"].iloc[-2])
-                    var = atual - anterior
-                    pct = (var / anterior) * 100
+                    var = Suk = atual - anterior
+                    pct = (Suk / anterior) * 100
                 elif len(df_ticker) == 1:
                     atual = float(df_ticker["Close"].iloc[-1])
                     var, pct = 0.0, 0.0
@@ -463,6 +463,7 @@ with st.sidebar:
             st.success("Pasta renomeada com sucesso!")
             st.rerun()
 
+    # 🚀 REMOVER ATIVO TOTALMENTE SEGURO: Uso do split limitado e checagem forte de string para evitar ValueError
     st.divider()
     st.header("❌ Remover Ativo")
     lista_ativos_remover = [f"{a['Ticker']} ({a['Carteira']})" for a in st.session_state["carteira"] if a["Ticker"] != "CAIXA"]
@@ -470,9 +471,10 @@ with st.sidebar:
     
     ativo_para_remover = st.selectbox("Selecione o Ativo para Excluir", ["Selecionar Ativo..."] + sorted(lista_ativos_remover), key="sel_remover_box")
     if st.button("Excluir Permanentemente", use_container_width=True):
-        if ativo_para_remover != "Selecionar Ativo...":
-            tk_excluir, cart_excluir = ativo_para_remover.split(" (")
-            cart_excluir = cart_excluir.replace(")", "")
+        if ativo_para_remover != "Selecionar Ativo..." and " (" in ativo_para_remover:
+            parts = ativo_para_remover.split(" (", 1)
+            tk_excluir = parts[0].strip()
+            cart_excluir = parts[1].replace(")", "").strip()
             
             st.session_state["carteira"] = [
                 a for a in st.session_state["carteira"]
@@ -481,6 +483,8 @@ with st.sidebar:
             st.session_state["carteira"] = salvar_dados(st.session_state["carteira"])
             st.success(f"{tk_excluir} removido com sucesso!")
             st.rerun()
+        else:
+            st.warning("Por favor, selecione um ativo válido antes de clicar.")
 
     st.divider()
     st.header("💾 Backup dos Dados")
@@ -506,7 +510,7 @@ with st.sidebar:
             st.error("Arquivo de backup inválido.")
 
 # ==========================================
-# --- RESOLUÇÃO E ESTRUTURAÇÃO DOS DADOS (CORRIGIDO) ---
+# --- RESOLUÇÃO E ESTRUTURAÇÃO DOS DADOS ---
 # ==========================================
 if "carteira_ativa_radio" not in st.session_state:
     st.session_state["carteira_ativa_radio"] = carteiras_existentes[0]
@@ -531,7 +535,7 @@ for c_name in carteiras_existentes:
 def eh_patrimonio_real(ativo):
     return str(ativo.get("Carteira", "COMPRAS (Real)")).upper() not in CARTEIRAS_TRACKING
 
-# Tickers filtrados e cotações em lote calculados ANTES da geração de cartões
+# Tickers filtrados e cotações em lote calculados antes dos cartões (Prevenção de NameError)
 tickers_filtrados = list(set([a["Ticker"] for a in dados_aba]))
 precos_lote = buscar_cotacoes_lote(tickers_filtrados)
 
