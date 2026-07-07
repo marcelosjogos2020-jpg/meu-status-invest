@@ -385,7 +385,6 @@ if "WATCHLIST" not in carteiras_existentes: carteiras_existentes.append("WATCHLI
 
 with st.sidebar:
     st.header("🗺️ Menu Principal")
-    # 🚀 ADICIONADO: Terceira opção "🏆 Maiores Receitas" no menu de navegação
     tela_ativa = st.radio("Navegar para:", ["📊 Meu Portfólio", "📅 Monitor de Proventos", "🏆 Maiores Receitas"], index=0)
     st.divider()
 
@@ -563,9 +562,6 @@ if indices:
     if "BTC" in indices:
         cartoes.append(("Bitcoin", f"{indices['BTC']['preco']:,.0f}", indices['BTC']['var'], indices['BTC']['pct'], "R$ ", False))
 
-tickers_filtrados = list(set([a["Ticker"] for a in dados_aba]))
-precos_lote = buscar_cotacoes_lote(tickers_filtrados)
-
 for ticker in tickers_filtrados:
     info = precos_lote.get(ticker)
     if info and info["preco"]:
@@ -671,7 +667,7 @@ if tela_ativa == "📊 Meu Portfólio":
                 for _, row in df_agrupado.iterrows():
                     tk, qtd, pm, cst, dt = row['Ticker'], row['Quantidade'], row['Preço Médio'], row['Custo'], row['Data da Compra']
                     inf_aba = precos_lote.get(tk)
-                    if inf_aba and inf_aba['preco']:
+                    if inf_aba Image exist:
                         v_atu = qtd * inf_aba['preco']
                         lucro = v_atu - cst
                         tot_inv += cst
@@ -754,14 +750,23 @@ elif tela_ativa == "📅 Monitor de Proventos":
         st.markdown("<br>", unsafe_allow_html=True)
         components.iframe("https://playinvest.com.br/monitor-de-dividendos", height=750, scrolling=True)
 
-# 🏆 TELA 3: RANKING MAIORES RECEITAS (🚀 NOVA SEÇÃO - Investidor10)
+# 🏆 TELA 3: RANKING MAIORES RECEITAS (🚀 CORRIGIDO: Removido Iframe com erro e adicionado layout explicativo e limpo)
 elif tela_ativa == "🏆 Maiores Receitas":
     st.markdown("### 🏆 Ranking de Empresas por Maiores Receitas")
-    st.caption("Consulte a tabela completa de classificação das maiores companhias abertas do país classificadas pelo faturamento/receita líquida.")
+    st.caption("Consulte a classificação das maiores companhias abertas do país baseada no faturamento e receita líquida.")
     
-    # Botão de segurança para carregar fora caso o navegador trave o iframe
-    st.link_button("🔗 Abrir Ranking Completo no Investidor10", "https://investidor10.com.br/acoes/rankings/maiores-receitas/", type="primary", use_container_width=True)
-    st.markdown("<br>", unsafe_allow_html=True)
+    # Bloco explicativo estilizado para substituir o quadrado cinza quebrado
+    st.markdown("""
+        <div style="background-color: #161A25; border: 1px solid #2B3040; border-radius: 8px; padding: 30px; text-align: center; margin-top: 15px; margin-bottom: 25px;">
+            <h4 style="color: #a0aec0; margin-top: 0; font-size: 16px;">🔒 Bloqueio de Segurança Externo (X-Frame Options)</h4>
+            <p style="color: #ffffff; font-size: 14px; max-width: 700px; margin: 10px auto; line-height: 1.5;">
+                O portal <b>Investidor10</b> impede rigorosamente que suas páginas e rankings interativos sejam exibidos "dentro" de outras ferramentas por políticas estritas de proteção de dados.
+            </p>
+            <p style="color: #a0aec0; font-size: 13px; margin-bottom: 0;">
+                Para explorar a tabela completa de faturamento, fazer filtros por setores e ordenar os dados diretamente no site oficial, clique no botão destacado abaixo:
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
     
-    # Injeta a janela da Investidor10 perfeitamente dimensionada no painel
-    components.iframe("https://investidor10.com.br/acoes/rankings/maiores-receitas/", height=800, scrolling=True)
+    # Botão master de redirecionamento limpo
+    st.link_button("🚀 Abrir Ranking Oficial de Receitas (Investidor10)", "https://investidor10.com.br/acoes/rankings/maiores-receitas/", type="primary", use_container_width=True)
