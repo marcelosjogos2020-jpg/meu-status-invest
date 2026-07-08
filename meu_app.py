@@ -7,11 +7,16 @@ import os
 import json
 from datetime import datetime
 from streamlit_searchbox import st_searchbox
+from streamlit_autorefresh import st_autorefresh
 
 # Configuração para usar o ecrã inteiro
 st.set_page_config(page_title="Meu Portfólio", page_icon="📈", layout="wide")
 
-# 🚀 RESET COMPLETO DE CSS: Corrige o corte do letreiro e elimina o vão preto do topo
+# 🚀 ATUALIZADOR AUTOMÁTICO: Força o ecrã a atualizar a cada 60000 milissegundos (1 minuto)
+# Isso faz com que o yfinance renove as cotações do topo e das tabelas automaticamente.
+st_autorefresh(interval=60000, key="datarefresh")
+
+# RESET COMPLETO DE CSS: Corrige o corte do letreiro e elimina o vão preto do topo
 st.markdown("""
     <style>
         /* Esconde o cabeçalho nativo do Streamlit */
@@ -198,7 +203,8 @@ TICKERS_B3 = {
 
 def search_tickers(searchterm):
     if not searchterm:
-        return []
+        ret_empty = []
+        return ret_empty
     termo = searchterm.strip().upper()
     resultados = []
     if len(termo) >= 4:
@@ -208,7 +214,8 @@ def search_tickers(searchterm):
             if tk != termo:
                 resultados.append((f"{tk} — {nome}", tk))
     resultados.sort(key=lambda x: (not x[1].startswith(termo), x[1]))
-    return resultados[:15]
+    ret_res = resultados[:15]
+    return ret_res
 
 # ==========================================
 # --- 1. BANCO DE DADOS (CSV) ---
@@ -224,13 +231,16 @@ def carregar_dados():
             df["Data da Compra"] = "Antes da Atualização"
         if "Carteira" not in df.columns:
             df["Carteira"] = "COMPRAS (Real)"
-        return df.to_dict(orient="records")
-    return []
+        ret_records = df.to_dict(orient="records")
+        return ret_records
+    ret_empty_list = []
+    return ret_empty_list
 
 def salvar_dados(dados):
     df = pd.DataFrame(dados)
     df.to_csv(ARQUIVO_BANCO, index=False)
-    return df.to_dict(orient="records")
+    ret_records = df.to_dict(orient="records")
+    return ret_records
 
 if "carteira" not in st.session_state:
     st.session_state["carteira"] = carregar_dados()
@@ -244,15 +254,18 @@ def buscar_cotacao_simples(ticker):
     try:
         hist = yf.Ticker(ticker_sa).history(period="1d")
         if len(hist) > 0:
-            return float(hist['Close'].iloc[-1])
+            val_close = float(hist['Close'].iloc[-1])
+            return val_close
     except Exception:
         pass
-    return None
+    ret_none = None
+    return ret_none
 
 @st.cache_data(ttl=60)
 def buscar_cotacoes_lote(tickers):
     if not tickers:
-        return {}
+        ret_empty_dict = {}
+        return ret_empty_dict
     tickers_sa = [t if t.endswith(('.SA', '-BRL', '=X', '^')) else f"{t}.SA" for t in tickers]
     precos = {}
     try:
@@ -281,9 +294,9 @@ def buscar_cotacoes_lote(tickers):
                 precos[t] = {"preco": p if p else 0.0, "var": 0.0, "pct": 0.0}
         return precos
     except Exception:
-        return {t: {"preco": buscar_cotacao_simples(t) or 0.0, "var": 0.0, "pct": 0.0} for t in tickers}
+        ret_fallback = {t: {"preco": buscar_cotacao_simples(t) or 0.0, "var": 0.0, "pct": 0.0} for t in tickers}
+        return ret_fallback
 
-# 🚀 ATUALIZADO: Incluindo Dow Jones e Nasdaq 100 na busca de índices mundiais
 @st.cache_data(ttl=300)
 def buscar_indices_topo():
     try:
@@ -302,7 +315,9 @@ def buscar_indices_topo():
                 dados[nome] = {"preco": atual, "var": var, "pct": pct}
         return dados
     except Exception:
-        return None
+        pass
+    ret_none = None
+    return ret_none
 
 @st.cache_data(ttl=300)
 def buscar_destaques_mercado():
@@ -338,7 +353,8 @@ def buscar_destaques_mercado():
     corte = min(5, n // 2) if n < 10 else 5
     altas = res_sort[:corte]
     baixas = sorted(res_sort[n - corte:], key=lambda x: x["Var%"]) if corte > 0 else []
-    return altas, baixas, erro_geral
+    ret_tuple = (altas, baixas, erro_geral)
+    return ret_tuple
 
 @st.cache_data(ttl=3600)
 def buscar_historico(ticker):
@@ -348,9 +364,12 @@ def buscar_historico(ticker):
         hist.reset_index(inplace=True)
         if hist['Date'].dt.tz is not None:
             hist['Date'] = hist['Date'].dt.tz_localize(None)
-        return hist[['Date', 'Close']].rename(columns={'Date': 'Data', 'Close': 'Preço'})
+        ret_hist = hist[['Date', 'Close']].rename(columns={'Date': 'Data', 'Close': 'Preço'})
+        return ret_hist
     except Exception:
-        return pd.DataFrame()
+        pass
+    ret_empty_df = pd.DataFrame()
+    return ret_empty_df
 
 @st.cache_data(ttl=7200)
 def buscar_proventos_ativos(tickers):
@@ -374,8 +393,10 @@ def buscar_proventos_ativos(tickers):
             pass
     if proventos_lista:
         df_res = pd.DataFrame(proventos_lista)
-        return df_res.sort_values(by="Timestamp", ascending=False).drop(columns=["Timestamp"])
-    return pd.DataFrame()
+        ret_sorted = df_res.sort_values(by="Timestamp", ascending=False).drop(columns=["Timestamp"])
+        return ret_sorted
+    ret_empty_df = pd.DataFrame()
+    return ret_empty_df
 
 # ==========================================
 # --- 3. BARRA LATERAL (NAVEGAÇÃO GLOBAL) ---
@@ -390,12 +411,7 @@ with st.sidebar:
     st.divider()
 
     st.header("🛒 Adicionar Ativo")
-    ticker_selecionado = st_searchbox(
-        search_tickers,
-        placeholder="Digite o código ou nome (ex: CEMIG, PETR4)",
-        key="busca_ticker",
-        clear_on_submit=False,
-    )
+    ticker_selecionado = st.text_input("Digite o código ou nome (ex: CEMIG, PETR4)", key="busca_ticker_manual")
     ticker_input = (ticker_selecionado or "").upper().strip()
 
     preco_atual_sidebar = None
@@ -535,9 +551,9 @@ for c_name in carteiras_existentes:
         CARTEIRAS_TRACKING.add(c_name.upper())
 
 def eh_patrimonio_real(ativo):
-    return str(ativo.get("Carteira", "COMPRAS (Real)")).upper() not in CARTEIRAS_TRACKING
+    ret_bool = str(ativo.get("Carteira", "COMPRAS (Real)")).upper() not in CARTEIRAS_TRACKING
+    return ret_bool
 
-# Tickers filtrados e cotações em lote calculados antes dos cartões (Prevenção de NameError)
 tickers_filtrados = list(set([a["Ticker"] for a in dados_aba]))
 precos_lote = buscar_cotacoes_lote(tickers_filtrados)
 
@@ -569,13 +585,14 @@ def criar_cartao_html(titulo, valor, variacao, pct, prefixo="", watchlist=False)
     sinal = "+" if variacao >= 0 else ""
     borda = "1.5px solid #378ADD" if watchlist else "1px solid #2B3040"
     nome_exibicao = f"👁️ {titulo}" if watchlist else titulo
-    return (
+    html_str = (
         f'<div class="mini-card {"mini-card-watch" if watchlist else ""}">'
         f'<div class="card-ticker">{nome_exibicao}</div>'
         f'<div class="card-preco">{prefixo}{valor}</div>'
         f'<div class="card-var {"var-positiva" if variacao >= 0 else "var-negativa"}">{sinal}{pct:.2f}%</div>'
         f'</div>'
     )
+    return html_str
 
 indices = buscar_indices_topo()
 cartoes = []
@@ -584,7 +601,6 @@ if indices:
         cartoes.append(("Ibovespa", f"{indices['IBOV']['preco']:,.0f}", indices['IBOV']['var'], indices['IBOV']['pct'], "", False))
     if "USD" in indices:
         cartoes.append(("Dólar", f"{indices['USD']['preco']:.4f}", indices['USD']['var'], indices['USD']['pct'], "R$ ", False))
-    # 🚀 ADICIONADO: Organizando para que Dow Jones e Nasdaq apareçam fixos no topo ao lado do dólar
     if "DOW" in indices:
         cartoes.append(("US30 / Dow Jones", f"{indices['DOW']['preco']:,.2f}", indices['DOW']['var'], indices['DOW']['pct'], "", False))
     if "NASDAQ" in indices:
