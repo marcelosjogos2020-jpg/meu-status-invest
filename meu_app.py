@@ -283,14 +283,17 @@ def buscar_cotacoes_lote(tickers):
     except Exception:
         return {t: {"preco": buscar_cotacao_simples(t) or 0.0, "var": 0.0, "pct": 0.0} for t in tickers}
 
+# 🚀 ATUALIZADO: Incluindo Dow Jones e Nasdaq 100 na busca de índices mundiais
 @st.cache_data(ttl=300)
 def buscar_indices_topo():
     try:
         ibov = yf.Ticker("^BVSP").history(period="2d")
         dolar = yf.Ticker("BRL=X").history(period="2d")
         btc = yf.Ticker("BTC-BRL").history(period="2d")
+        dow = yf.Ticker("^DJI").history(period="2d")
+        nasdaq = yf.Ticker("^NDX").history(period="2d")
         dados = {}
-        for nome, hist in [("IBOV", ibov), ("USD", dolar), ("BTC", btc)]:
+        for nome, hist in [("IBOV", ibov), ("USD", dolar), ("BTC", btc), ("DOW", dow), ("NASDAQ", nasdaq)]:
             if len(hist) >= 2:
                 atual = hist['Close'].iloc[-1]
                 ant = hist['Close'].iloc[-2]
@@ -463,7 +466,6 @@ with st.sidebar:
             st.success("Pasta renomeada com sucesso!")
             st.rerun()
 
-    # 🚀 CORREÇÃO DO REMOVER ATIVO: Mudado de .replace para fatiamento slice [:-1] para blindar pastas com parênteses
     st.divider()
     st.header("❌ Remover Ativo")
     lista_ativos_remover = [f"{a['Ticker']} ({a['Carteira']})" for a in st.session_state["carteira"] if a["Ticker"] != "CAIXA"]
@@ -474,7 +476,6 @@ with st.sidebar:
         if ativo_para_remover != "Selecionar Ativo..." and " (" in ativo_para_remover:
             parts = ativo_para_remover.split(" (", 1)
             tk_excluir = parts[0].strip()
-            # Fatiamento cirúrgico de string para arrancar apenas o ÚLTIMO caractere ) adicionado pelo label
             cart_excluir = parts[1][:-1].strip()
             
             st.session_state["carteira"] = [
@@ -583,6 +584,11 @@ if indices:
         cartoes.append(("Ibovespa", f"{indices['IBOV']['preco']:,.0f}", indices['IBOV']['var'], indices['IBOV']['pct'], "", False))
     if "USD" in indices:
         cartoes.append(("Dólar", f"{indices['USD']['preco']:.4f}", indices['USD']['var'], indices['USD']['pct'], "R$ ", False))
+    # 🚀 ADICIONADO: Organizando para que Dow Jones e Nasdaq apareçam fixos no topo ao lado do dólar
+    if "DOW" in indices:
+        cartoes.append(("US30 / Dow Jones", f"{indices['DOW']['preco']:,.2f}", indices['DOW']['var'], indices['DOW']['pct'], "", False))
+    if "NASDAQ" in indices:
+        cartoes.append(("NAS100 / Nasdaq", f"{indices['NASDAQ']['preco']:,.2f}", indices['NASDAQ']['var'], indices['NASDAQ']['pct'], "", False))
     if "BTC" in indices:
         cartoes.append(("Bitcoin", f"{indices['BTC']['preco']:,.0f}", indices['BTC']['var'], indices['BTC']['pct'], "R$ ", False))
 
