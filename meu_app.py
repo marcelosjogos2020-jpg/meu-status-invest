@@ -12,8 +12,7 @@ from streamlit_autorefresh import st_autorefresh
 # Configuração para usar o ecrã inteiro
 st.set_page_config(page_title="Meu Portfólio", page_icon="📈", layout="wide")
 
-# 🚀 ATUALIZADOR AUTOMÁTICO: Força o ecrã a atualizar a cada 60000 milissegundos (1 minuto)
-# Isso faz com que o yfinance renove as cotações do topo e das tabelas automaticamente.
+# ATUALIZADOR AUTOMÁTICO: Força o ecrã a atualizar a cada 60 segundos
 st_autorefresh(interval=60000, key="datarefresh")
 
 # RESET COMPLETO DE CSS: Corrige o corte do letreiro e elimina o vão preto do topo
@@ -203,8 +202,7 @@ TICKERS_B3 = {
 
 def search_tickers(searchterm):
     if not searchterm:
-        ret_empty = []
-        return ret_empty
+        return []
     termo = searchterm.strip().upper()
     resultados = []
     if len(termo) >= 4:
@@ -214,8 +212,7 @@ def search_tickers(searchterm):
             if tk != termo:
                 resultados.append((f"{tk} — {nome}", tk))
     resultados.sort(key=lambda x: (not x[1].startswith(termo), x[1]))
-    ret_res = resultados[:15]
-    return ret_res
+    return resultados[:15]
 
 # ==========================================
 # --- 1. BANCO DE DADOS (CSV) ---
@@ -231,16 +228,13 @@ def carregar_dados():
             df["Data da Compra"] = "Antes da Atualização"
         if "Carteira" not in df.columns:
             df["Carteira"] = "COMPRAS (Real)"
-        ret_records = df.to_dict(orient="records")
-        return ret_records
-    ret_empty_list = []
-    return ret_empty_list
+        return df.to_dict(orient="records")
+    return []
 
 def salvar_dados(dados):
     df = pd.DataFrame(dados)
     df.to_csv(ARQUIVO_BANCO, index=False)
-    ret_records = df.to_dict(orient="records")
-    return ret_records
+    return df.to_dict(orient="records")
 
 if "carteira" not in st.session_state:
     st.session_state["carteira"] = carregar_dados()
@@ -254,18 +248,15 @@ def buscar_cotacao_simples(ticker):
     try:
         hist = yf.Ticker(ticker_sa).history(period="1d")
         if len(hist) > 0:
-            val_close = float(hist['Close'].iloc[-1])
-            return val_close
+            return float(hist['Close'].iloc[-1])
     except Exception:
         pass
-    ret_none = None
-    return ret_none
+    return None
 
 @st.cache_data(ttl=60)
 def buscar_cotacoes_lote(tickers):
     if not tickers:
-        ret_empty_dict = {}
-        return ret_empty_dict
+        return {}
     tickers_sa = [t if t.endswith(('.SA', '-BRL', '=X', '^')) else f"{t}.SA" for t in tickers]
     precos = {}
     try:
@@ -294,8 +285,7 @@ def buscar_cotacoes_lote(tickers):
                 precos[t] = {"preco": p if p else 0.0, "var": 0.0, "pct": 0.0}
         return precos
     except Exception:
-        ret_fallback = {t: {"preco": buscar_cotacao_simples(t) or 0.0, "var": 0.0, "pct": 0.0} for t in tickers}
-        return ret_fallback
+        return {t: {"preco": buscar_cotacao_simples(t) or 0.0, "var": 0.0, "pct": 0.0} for t in tickers}
 
 @st.cache_data(ttl=300)
 def buscar_indices_topo():
@@ -316,8 +306,7 @@ def buscar_indices_topo():
         return dados
     except Exception:
         pass
-    ret_none = None
-    return ret_none
+    return None
 
 @st.cache_data(ttl=300)
 def buscar_destaques_mercado():
@@ -353,8 +342,7 @@ def buscar_destaques_mercado():
     corte = min(5, n // 2) if n < 10 else 5
     altas = res_sort[:corte]
     baixas = sorted(res_sort[n - corte:], key=lambda x: x["Var%"]) if corte > 0 else []
-    ret_tuple = (altas, baixas, erro_geral)
-    return ret_tuple
+    return altas, baixas, erro_geral
 
 @st.cache_data(ttl=3600)
 def buscar_historico(ticker):
@@ -364,12 +352,10 @@ def buscar_historico(ticker):
         hist.reset_index(inplace=True)
         if hist['Date'].dt.tz is not None:
             hist['Date'] = hist['Date'].dt.tz_localize(None)
-        ret_hist = hist[['Date', 'Close']].rename(columns={'Date': 'Data', 'Close': 'Preço'})
-        return ret_hist
+        return hist[['Date', 'Close']].rename(columns={'Date': 'Data', 'Close': 'Preço'})
     except Exception:
         pass
-    ret_empty_df = pd.DataFrame()
-    return ret_empty_df
+    return pd.DataFrame()
 
 @st.cache_data(ttl=7200)
 def buscar_proventos_ativos(tickers):
@@ -393,10 +379,8 @@ def buscar_proventos_ativos(tickers):
             pass
     if proventos_lista:
         df_res = pd.DataFrame(proventos_lista)
-        ret_sorted = df_res.sort_values(by="Timestamp", ascending=False).drop(columns=["Timestamp"])
-        return ret_sorted
-    ret_empty_df = pd.DataFrame()
-    return ret_empty_df
+        return df_res.sort_values(by="Timestamp", ascending=False).drop(columns=["Timestamp"])
+    return pd.DataFrame()
 
 # ==========================================
 # --- 3. BARRA LATERAL (NAVEGAÇÃO GLOBAL) ---
@@ -454,6 +438,64 @@ with st.sidebar:
         st.session_state["carteira"] = []
         if os.path.exists(ARQUIVO_BANCO): os.remove(ARQUIVO_BANCO)
         st.rerun()
+
+    # 🚀 NOVO PANEL: Importador Inteligente de Arquivo Excel (.xlsx) mapeando colunas da foto
+    st.divider()
+    st.header("📥 Importar Excel (.xlsx)")
+    arquivo_excel = st.file_uploader("Carregar planilha de ativos:", type=["xlsx"])
+    carteira_import_destino = st.selectbox("Salvar ativos na Pasta:", carteiras_existentes, key="sb_import_destino")
+    
+    if st.button("Executar Importação", use_container_width=True):
+        if arquivo_excel is not None:
+            try:
+                df_ex = pd.read_excel(arquivo_excel)
+                df_ex.columns = [str(c).strip() for c in df_ex.columns]
+                
+                col_ativo = "Ativo" if "Ativo" in df_ex.columns else None
+                col_qtd = "Qtd. total" if "Qtd. total" in df_ex.columns else ("Qtd. disponível" if "Qtd. disponível" in df_ex.columns else None)
+                
+                if col_ativo and col_qtd:
+                    ativos_importados = []
+                    data_hoje = datetime.today().strftime("%d/%m/%Y")
+                    
+                    for _, row in df_ex.iterrows():
+                        tk = str(row[col_ativo]).upper().strip()
+                        if pd.isna(tk) or tk == "" or tk == "NAN":
+                            continue
+                            
+                        try:
+                            qtd = int(row[col_qtd])
+                        except:
+                            qtd = 0
+                            
+                        preco_pago = 0.0
+                        if "Última cotação" in df_ex.columns:
+                            try:
+                                p_str = str(row["Última cotação"]).replace("R$", "").replace(" ", "")
+                                p_str = p_str.replace(".", "").replace(",", ".")
+                                preco_pago = float(p_str)
+                            except:
+                                preco_pago = 0.0
+                                
+                        ativos_importados.append({
+                            "Ticker": tk, "Quantidade": qtd,
+                            "Preço Pago": preco_pago, "Data da Compra": data_hoje,
+                            "Carteira": carteira_import_destino
+                        })
+                        
+                    if ativos_importados:
+                        st.session_state["carteira"].extend(ativos_importados)
+                        st.session_state["carteira"] = salvar_dados(st.session_state["carteira"])
+                        st.success(f"Sucesso! {len(ativos_importados)} ativos importados para {carteira_import_destino}!")
+                        st.rerun()
+                    else:
+                        st.warning("Nenhum registro legível encontrado na planilha.")
+                else:
+                    st.error("Erro estrutural: A planilha precisa conter os cabeçalhos exatamente como 'Ativo' e 'Qtd. total'.")
+            except Exception as e:
+                st.error(f"Erro ao processar o Excel: {str(e)}")
+        else:
+            st.warning("Por favor, selecione um arquivo válido antes de clicar.")
 
     st.divider()
     st.header("📂 Nova Carteira")
@@ -542,7 +584,6 @@ dados_aba = [
 ativos_com_quantidade = [a for a in dados_aba if float(a.get("Quantidade", 0)) > 0]
 is_tracking_aba = (carteira_ativa.upper() == "WATCHLIST") or (len(ativos_com_quantidade) == 0)
 
-# Mapeamento dinâmico de tracking para o patrimônio global
 CARTEIRAS_TRACKING = set()
 for c_name in carteiras_existentes:
     validos = [a for a in st.session_state["carteira"] if str(a.get("Carteira")).upper() == c_name.upper() and a["Ticker"] != "CAIXA"]
@@ -551,13 +592,11 @@ for c_name in carteiras_existentes:
         CARTEIRAS_TRACKING.add(c_name.upper())
 
 def eh_patrimonio_real(ativo):
-    ret_bool = str(ativo.get("Carteira", "COMPRAS (Real)")).upper() not in CARTEIRAS_TRACKING
-    return ret_bool
+    return str(ativo.get("Carteira", "COMPRAS (Real)")).upper() not in CARTEIRAS_TRACKING
 
 tickers_filtrados = list(set([a["Ticker"] for a in dados_aba]))
 precos_lote = buscar_cotacoes_lote(tickers_filtrados)
 
-# Letreiro tape dinâmico e seguro
 simbolos_letreiro = [
     {"proName": "BMFBOVESPA:IBOV", "title": "Ibovespa"},
     {"proName": "FX_IDC:USDBRL", "title": "Dólar"},
@@ -585,14 +624,13 @@ def criar_cartao_html(titulo, valor, variacao, pct, prefixo="", watchlist=False)
     sinal = "+" if variacao >= 0 else ""
     borda = "1.5px solid #378ADD" if watchlist else "1px solid #2B3040"
     nome_exibicao = f"👁️ {titulo}" if watchlist else titulo
-    html_str = (
+    return (
         f'<div class="mini-card {"mini-card-watch" if watchlist else ""}">'
         f'<div class="card-ticker">{nome_exibicao}</div>'
         f'<div class="card-preco">{prefixo}{valor}</div>'
         f'<div class="card-var {"var-positiva" if variacao >= 0 else "var-negativa"}">{sinal}{pct:.2f}%</div>'
         f'</div>'
     )
-    return html_str
 
 indices = buscar_indices_topo()
 cartoes = []
