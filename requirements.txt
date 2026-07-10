@@ -3,3 +3,4 @@ yfinance
 plotly
 streamlit-searchbox
 streamlit-autorefresh
+openpyxl
