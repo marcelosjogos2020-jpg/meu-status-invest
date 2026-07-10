@@ -439,7 +439,7 @@ with st.sidebar:
         if os.path.exists(ARQUIVO_BANCO): os.remove(ARQUIVO_BANCO)
         st.rerun()
 
-    # 🚀 IMPORTADOR AUTOMÁTICO FLEXÍVEL (Suporta o formato vertical de cópia e horizontal tradicional)
+    # 🚀 NOVO PANEL: Importador Inteligente de Arquivo Excel (.xlsx) mapeando colunas da foto
     st.divider()
     st.header("📥 Importar Excel (.xlsx)")
     arquivo_excel = st.file_uploader("Carregar planilha de ativos:", type=["xlsx"])
@@ -448,96 +448,52 @@ with st.sidebar:
     if st.button("Executar Importação", use_container_width=True):
         if arquivo_excel is not None:
             try:
-                importado_com_sucesso = False
-                data_hoje = datetime.today().strftime("%d/%m/%Y")
-                ativos_importados = []
-
-                # 1. TENTA PROCESSAR COMO FORMATO VERTICAL (Dados empilhados de 7 em 7 linhas na coluna A)
-                df_raw = pd.read_excel(arquivo_excel, header=None)
-                if df_raw.shape[1] >= 1 and len(df_raw) >= 7 and len(df_raw) % 7 == 0:
-                    for i in range(0, len(df_raw), 7):
-                        tk = str(df_raw.iloc[i, 0]).upper().strip()
-                        if pd.isna(df_raw.iloc[i, 0]) or tk == "" or tk == "NAN":
+                df_ex = pd.read_excel(arquivo_excel)
+                df_ex.columns = [str(c).strip() for c in df_ex.columns]
+                
+                col_ativo = "Ativo" if "Ativo" in df_ex.columns else None
+                col_qtd = "Qtd. total" if "Qtd. total" in df_ex.columns else ("Qtd. disponível" if "Qtd. disponível" in df_ex.columns else None)
+                
+                if col_ativo and col_qtd:
+                    ativos_importados = []
+                    data_hoje = datetime.today().strftime("%d/%m/%Y")
+                    
+                    for _, row in df_ex.iterrows():
+                        tk = str(row[col_ativo]).upper().strip()
+                        if pd.isna(tk) or tk == "" or tk == "NAN":
                             continue
+                            
                         try:
-                            qtd = int(df_raw.iloc[i+4, 0])  # Linha 4 do bloco de 7 é a Qtd total
+                            qtd = int(row[col_qtd])
                         except:
+                            qtd = 0
+                            
+                        preco_pago = 0.0
+                        if "Última cotação" in df_ex.columns:
                             try:
-                                qtd = int(df_raw.iloc[i+1, 0])  # Backup: Linha 1 (Qtd disponível)
+                                p_str = str(row["Última cotação"]).replace("R$", "").replace(" ", "")
+                                p_str = p_str.replace(".", "").replace(",", ".")
+                                preco_pago = float(p_str)
                             except:
-                                qtd = 0
-                        try:
-                            p_str = str(df_raw.iloc[i+5, 0]).replace("R$", "").replace(" ", "").replace("\xa0", "")
-                            p_str = p_str.replace(".", "").replace(",", ".")
-                            preco_pago = float(p_str)
-                        except:
-                            preco_pago = 0.0
-
+                                preco_pago = 0.0
+                                
                         ativos_importados.append({
                             "Ticker": tk, "Quantidade": qtd,
                             "Preço Pago": preco_pago, "Data da Compra": data_hoje,
                             "Carteira": carteira_import_destino
                         })
-                    
+                        
                     if ativos_importados:
                         st.session_state["carteira"].extend(ativos_importados)
                         st.session_state["carteira"] = salvar_dados(st.session_state["carteira"])
-                        st.success(f"Sucesso! {len(ativos_importados)} ativos importados da lista vertical para a pasta {carteira_import_destino}!")
-                        importado_com_sucesso = True
+                        st.success(f"Sucesso! {len(ativos_importados)} ativos importados para {carteira_import_destino}!")
                         st.rerun()
-
-                # 2. CASO FALHE, TENTA PROCESSAR NO FORMATO HORIZONTAL CONVENCIONAL VARRENDO AS ABAS
-                if not importado_com_sucesso:
-                    xls_file = pd.ExcelFile(arquivo_excel)
-                    for sheet_name in xls_file.sheet_names:
-                        df_ex = pd.read_excel(arquivo_excel, sheet_name=sheet_name)
-                        df_ex.columns = [str(c).strip() for c in df_ex.columns]
-                        
-                        col_ativo = "Ativo" if "Ativo" in df_ex.columns else None
-                        col_qtd = "Qtd. total" if "Qtd. total" in df_ex.columns else ("Qtd. disponível" if "Qtd. disponível" in df_ex.columns else None)
-                        
-                        if col_ativo and col_qtd:
-                            for _, row in df_ex.iterrows():
-                                tk = str(row[col_ativo]).upper().strip()
-                                if pd.isna(row[col_ativo]) or tk == "" or tk == "NAN":
-                                    continue
-                                try:
-                                    qtd = int(row[col_qtd])
-                                except:
-                                    qtd = 0
-                                preco_pago = 0.0
-                                if "Última cotação" in df_ex.columns:
-                                    try:
-                                        p_str = str(row["Última cotação"]).replace("R$", "").replace(" ", "").replace("\xa0", "")
-                                        p_str = p_str.replace(".", "").replace(",", ".")
-                                        preco_pago = float(p_str)
-                                    except:
-                                        preco_pago = 0.0
-
-                                idx_alt = next((index for (index, d) in enumerate(ativos_importados) if d["Ticker"] == tk), None)
-                                if idx_alt is not None:
-                                    ativos_importados[idx_alt]["Quantidade"] = qtd
-                                    if preco_pago > 0:
-                                        ativos_importados[idx_alt]["Preço Pago"] = preco_pago
-                                else:
-                                    ativos_importados.append({
-                                        "Ticker": tk, "Quantidade": qtd,
-                                        "Preço Pago": preco_pago, "Data da Compra": data_hoje,
-                                        "Carteira": carteira_import_destino
-                                    })
-                            
-                            if ativos_importados:
-                                st.session_state["carteira"].extend(ativos_importados)
-                                st.session_state["carteira"] = salvar_dados(st.session_state["carteira"])
-                                st.success(f"Sucesso! {len(ativos_importados)} ativos importados da tabela horizontal ({sheet_name}) para a pasta {carteira_import_destino}!")
-                                importado_com_sucesso = True
-                                st.rerun()
-                                break
-                                
-                if not importado_com_sucesso:
-                    st.error("Erro estrutural: O arquivo não pôde ser interpretado nem como lista vertical e nem como tabela contendo colunas com títulos 'Ativo' e 'Qtd. total'.")
+                    else:
+                        st.warning("Nenhum registro legível encontrado na planilha.")
+                else:
+                    st.error("Erro estrutural: A planilha precisa conter os cabeçalhos exatamente como 'Ativo' e 'Qtd. total'.")
             except Exception as e:
-                st.error(f"Erro inesperado ao processar o Excel: {str(e)}")
+                st.error(f"Erro ao processar o Excel: {str(e)}")
         else:
             st.warning("Por favor, selecione um arquivo válido antes de clicar.")
 
