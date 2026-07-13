@@ -6,13 +6,9 @@ import streamlit.components.v1 as components
 import os
 import json
 from datetime import datetime
-from streamlit_autorefresh import st_autorefresh
 
 # Configuração para usar o ecrã inteiro
 st.set_page_config(page_title="Meu Portfólio", page_icon="📈", layout="wide")
-
-# ATUALIZADOR AUTOMÁTICO: Força o ecrã a atualizar a cada 60 segundos
-st_autorefresh(interval=60000, key="datarefresh")
 
 # RESET COMPLETO DE CSS: Corrige o corte do letreiro e elimina o vão preto do topo
 st.markdown("""
@@ -286,6 +282,11 @@ if "COMPRAS (Real)" not in carteiras_existentes: carteiras_existentes.insert(0, 
 if "WATCHLIST" not in carteiras_existentes: carteiras_existentes.append("WATCHLIST")
 
 with st.sidebar:
+    # 🔄 BOTÃO MANUAL EM SUBSTITUIÇÃO AO AUTOREFRESH FANTASMA
+    if st.button("🔄 Atualizar Cotações em Tempo Real", use_container_width=True, type="primary"):
+        st.cache_data.clear()
+        st.rerun()
+        
     st.header("🗺️ Menu Principal")
     tela_ativa = st.radio("Navegar para:", ["📊 Meu Portfólio", "📅 Monitor de Proventos", "🏆 Maiores Receitas"], index=0)
     st.divider()
@@ -335,7 +336,7 @@ with st.sidebar:
         if os.path.exists(ARQUIVO_BANCO): os.remove(ARQUIVO_BANCO)
         st.rerun()
 
-    # 🚀 IMPORTADOR AUTOMÁTICO FLEXÍVEL (Suporta lista vertical e horizontal)
+    # IMPORTADOR AUTOMÁTICO FLEXÍVEL (Suporta lista vertical e horizontal)
     st.divider()
     st.header("📥 Importar Excel (.xlsx)")
     arquivo_excel = st.file_uploader("Carregar planilha de ativos:", type=["xlsx"])
@@ -691,8 +692,8 @@ if tela_ativa == "📊 Meu Portfólio":
                 for _, row in df_agrupado.iterrows():
                     tk, qtd, pm, cst, dt = row['Ticker'], row['Quantidade'], row['Preço Médio'], row['Custo'], row['Data da Compra']
                     inf_aba = precos_lote.get(tk)
-                    if inf_aba and inf_aba['preco']:
-                        v_atu = qtd * inf_aba['preco']
+                    if info := precos_lote.get(tk):
+                        v_atu = qtd * info['preco']
                         lucro = v_atu - cst
                         tot_inv += cst
                         tot_atu += v_atu
