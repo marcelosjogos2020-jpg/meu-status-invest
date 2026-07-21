@@ -646,11 +646,11 @@ if tela_ativa == "📊 Meu Portfólio":
             if lista_graf:
                 df_g = pd.DataFrame(lista_graf)
                 c_pie, c_bar = st.columns(2)
-                fig_pie = px.pie(df_g.groupby('Categoria')['Patrimônio'].sum().reset_index(), values='Patrimônio', names='Categoria', hole=0.5, color_discrete_sequence=['#00c698', '#1b4d3e'])
+                fig_pie = px.pie(df_g.groupby('Categoria')['Patrimônio'].sum().reset_index(), values='Patrimônio', names='Categoria', hole=0.5, color='Categoria', color_discrete_map={"Ações": "#378ADD", "FIIs": "#00c698"})
                 fig_pie.update_layout(margin=dict(t=0, b=0, l=0, r=0), paper_bgcolor='rgba(0,0,0,0)', font_color="white")
                 c_pie.plotly_chart(fig_pie, use_container_width=True)
                 
-                fig_bar = px.bar(df_g.sort_values(by="Patrimônio", ascending=False), x='Ativo', y='Patrimônio', color='Categoria', text_auto='.2s', color_discrete_map={"Ações": "#1b4d3e", "FIIs": "#00c698"})
+                fig_bar = px.bar(df_g.sort_values(by="Patrimônio", ascending=False), x='Ativo', y='Patrimônio', color='Categoria', text_auto='.2s', color_discrete_map={"Ações": "#378ADD", "FIIs": "#00c698"})
                 fig_bar.update_layout(margin=dict(t=0, b=0, l=0, r=0), paper_bgcolor='rgba(0,0,0,0)', font_color="white")
                 c_bar.plotly_chart(fig_bar, use_container_width=True)
 
@@ -705,10 +705,16 @@ if tela_ativa == "📊 Meu Portfólio":
                     st.dataframe(styled, use_container_width=True, hide_index=True)
 
                     st.markdown("### Resumo Global")
+                    ocultar_valores = st.toggle("🙈 Ocultar valores", key="ocultar_valores_resumo")
                     c1, c2, c3 = st.columns(3)
-                    c1.metric("Totalmente Investido", f"R$ {tot_inv:,.2f}")
-                    c2.metric("Patrimônio Atual", f"R$ {tot_atu:,.2f}", f"R$ {tot_atu - tot_inv:,.2f}")
-                    c3.metric("Rentabilidade Geral", f"{(((tot_atu - tot_inv) / tot_inv) * 100 if tot_inv > 0 else 0):.2f}%")
+                    if ocultar_valores:
+                        c1.metric("Totalmente Investido", "R$ ••••••")
+                        c2.metric("Patrimônio Atual", "R$ ••••••")
+                        c3.metric("Rentabilidade Geral", "••••")
+                    else:
+                        c1.metric("Totalmente Investido", f"R$ {tot_inv:,.2f}")
+                        c2.metric("Patrimônio Atual", f"R$ {tot_atu:,.2f}", f"R$ {tot_atu - tot_inv:,.2f}")
+                        c3.metric("Rentabilidade Geral", f"{(((tot_atu - tot_inv) / tot_inv) * 100 if tot_inv > 0 else 0):.2f}%")
 
             st.markdown("### Evolução do Ativo")
             if not df_agrupado.empty:
